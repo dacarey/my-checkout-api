@@ -1,0 +1,62 @@
+extends: ["spectral:oas"]
+
+rules:
+  # OpenAPI Info Rules
+  info-contact: true
+  info-description: true
+  info-license: true
+
+  # Disable rules not relevant for API specifications
+  oas3-api-servers: false # API specs don't need servers array
+
+  # Schema Design Rules
+  operation-description: true
+  operation-operationId: true
+  operation-operationId-unique: true
+  operation-operationId-valid-in-url: true
+  operation-parameters: true
+  operation-success-response: true
+  operation-tags: true
+
+  # Direct Wines Custom Rules
+  dw-schema-names-pascal-case:
+    description: Schema names must be PascalCase
+    given: "$.components.schemas.*"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[A-Z][a-zA-Z0-9]*$"
+    severity: error
+
+  dw-property-names-camel-case:
+    description: Property names should be camelCase
+    given: "$.components.schemas..properties.*"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[a-z][a-zA-Z0-9]*$"
+    severity: warn
+
+  dw-description-quality:
+    description: Descriptions should be meaningful and end with a period
+    given: "$.components.schemas..description"
+    then:
+      function: pattern
+      functionOptions:
+        match: ".{10,}\\.\\s*$"
+    severity: warn
+
+  dw-version-format:
+    description: Version should follow semantic versioning
+    given: "$.info.version"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^\\d+\\.\\d+\\.\\d+$"
+    severity: error
+
+overrides:
+  - files:
+      - "cdk/lib/apigateway/openapi-spec/carts-openapi-unresolved.yaml#/components/schemas/*"
+    rules:
+      oas3-unused-component: "off"
