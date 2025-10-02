@@ -1,0 +1,45 @@
+{
+    "extends": [
+        "config:recommended",
+        ":semanticCommits",
+        ":separateMajorReleases"
+    ],
+    "timezone": "Europe/London",
+    "schedule": ["before 6am on sunday"],
+    "dependencyDashboard": true,
+    "npm": {
+        "enabled": true
+    },
+    "packageFiles": [
+        {
+            "packageFile": "package.json"
+        },
+        {
+            "packageFile": "infra/package.json"
+        },
+        {
+            "packageFile": "lambda/package.json"
+        },
+        {
+            "packageFile": "openapi-spec-workflow/package.json"
+        }
+    ],
+    "packageRules": [
+        {
+            "matchPaths": ["package.json"],
+            "groupName": "root deps"
+        },
+        {
+            "matchPaths": ["infra/**"],
+            "groupName": "infra deps"
+        },
+        {
+            "matchPaths": ["lambda/**"],
+            "groupName": "lambda deps"
+        },
+        {
+            "matchPaths": ["openapi-spec-workflow/**"],
+            "groupName": "openapi-spec-workflow deps"
+        }
+    ]
+}
