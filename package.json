@@ -1,0 +1,28 @@
+{
+  "name": "my-checkout-api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare": "husky"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dacarey/my-checkout-api.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/dacarey/my-checkout-api/issues"
+  },
+  "homepage": "https://github.com/dacarey/my-checkout-api#readme",
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}
