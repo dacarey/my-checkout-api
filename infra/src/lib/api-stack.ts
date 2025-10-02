@@ -25,15 +25,25 @@ export class ApiStack extends Stack {
     );
 
     // 2. Process OpenAPI spec with variable substitution
-    const openApiSpecPath = path.join(__dirname, '../../../openapi/openapi.yaml');
+    const openApiSpecPath = path.join(__dirname, '../../../openapi/checkout-openapi.yaml');
     let openApiSpec = fs.readFileSync(openApiSpecPath, 'utf8');
 
     // Replace Lambda integration URI with actual ARN
     const lambdaIntegrationUri = `arn:aws:apigateway:${props.config.region}:lambda:path/2015-03-31/functions/${props.lambdaLiveAliasArn}/invocations`;
 
+    // Extract ServiceAccountID from the Lambda ARN
+    // Lambda ARN format: arn:aws:lambda:region:account-id:function:function-name:alias
+    const serviceAccountId = props.lambdaLiveAliasArn.split(':')[4];
+
     // Replace template variables in OpenAPI spec
+    // First replace the entire integration URI pattern with our live alias ARN
+    const uriPattern = /arn:aws:apigateway:\$\{AWSRegion\}:lambda:path\/2015-03-31\/functions\/arn:aws:lambda:\$\{AWSRegion\}:\$\{ServiceAccountID\}:function:dwaws-\$\{Environment\}-checkout-order-capture-lambda\/invocations/g;
+    openApiSpec = openApiSpec.replace(uriPattern, lambdaIntegrationUri);
+
+    // Then replace any remaining standalone variables
     openApiSpec = openApiSpec.replace(/\$\{LambdaIntegrationUri\}/g, lambdaIntegrationUri);
     openApiSpec = openApiSpec.replace(/\$\{AWSRegion\}/g, props.config.region);
+    openApiSpec = openApiSpec.replace(/\$\{ServiceAccountID\}/g, serviceAccountId);
     openApiSpec = openApiSpec.replace(/\$\{Environment\}/g, props.config.environment);
 
     // Optional: Development-only authorizer bypass
