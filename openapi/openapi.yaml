@@ -1,0 +1,107 @@
+openapi: 3.0.3
+info:
+  title: Checkout API
+  description: Simple checkout API for processing payment transactions
+  version: 0.1.0
+servers:
+  - url: https://api.example.com/{environment}
+    description: API Gateway endpoint
+    variables:
+      environment:
+        default: dev
+        description: Deployment environment
+
+paths:
+  /checkout/process:
+    post:
+      summary: Process checkout transaction
+      description: Processes a checkout request with payment and order details
+      operationId: processCheckout
+      security:
+        - GlobalAuthoriser: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - orderId
+                - amount
+                - currency
+              properties:
+                orderId:
+                  type: string
+                  description: Unique order identifier
+                  example: "ORD-12345"
+                amount:
+                  type: string
+                  description: Transaction amount
+                  example: "49.99"
+                currency:
+                  type: string
+                  description: Currency code
+                  example: "GBP"
+                paymentToken:
+                  type: string
+                  description: Payment token from payment provider
+                customerEmail:
+                  type: string
+                  format: email
+                  description: Customer email address
+      responses:
+        '200':
+          description: Checkout processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  orderId:
+                    type: string
+                  transactionId:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+      x-amazon-apigateway-integration:
+        uri: ${LambdaIntegrationUri}
+        type: aws_proxy
+        httpMethod: POST
+        passthroughBehavior: when_no_match
+
+components:
+  securitySchemes:
+    GlobalAuthoriser:
+      type: apiKey
+      name: Authorization
+      in: header
+      x-amazon-apigateway-authtype: custom
+      x-amazon-apigateway-authorizer:
+        type: request
+        authorizerUri: arn:aws:apigateway:${AWSRegion}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWSRegion}:AUTHORIZER_ACCOUNT:function:authorizer-lambda/invocations
+        authorizerResultTtlInSeconds: 300
+        identitySource: method.request.header.Authorization
