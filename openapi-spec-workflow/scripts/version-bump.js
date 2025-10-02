@@ -58,7 +58,7 @@ const CONFIG = {
     __dirname,
     "..",
     "..",
-    "apis/carts/cdk/lib/apigateway/openapi-spec/carts-openapi-unresolved.yaml",
+    "openapi/checkout-openapi-unresolved.yaml",
   ),
 };
 
