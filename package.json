@@ -1,13 +1,24 @@
 {
   "name": "my-checkout-api",
   "version": "0.1.0",
-  "description": "",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
+  "description": "Multi-account serverless checkout API using AWS CDK with TypeScript",
+  "private": true,
+  "engines": {
+    "node": ">=22.0.0"
   },
+  "workspaces": [
+    "lambda",
+    "infra"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "npm run build --workspace=infra",
+    "test": "npm run test --workspace=infra",
+    "test:run": "npm run test:run --workspace=infra",
+    "deploy:single": "BYPASS_AUTHORIZER=true ./deploy-single-account.sh",
+    "deploy:single:auth": "./deploy-single-account.sh",
+    "diff:single": "BYPASS_AUTHORIZER=true ./diff-single-account.sh",
+    "diff:single:auth": "./diff-single-account.sh",
+    "destroy:single": "./destroy-single-account.sh",
     "prepare": "husky"
   },
   "repository": {
@@ -17,7 +28,6 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/dacarey/my-checkout-api/issues"
   },
