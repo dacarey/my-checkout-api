@@ -336,7 +336,7 @@ function showHelp() {
   log("  node scripts/download-resolved.js --version 1.4.2 --force", "reset");
   log("");
   log("Workflow:", "yellow");
-  log("  1. Edit carts-openapi-unresolved.yaml (master source)", "reset");
+  log("  1. Edit checkout-openapi-unresolved.yaml (master source)", "reset");
   log("  2. npm run sync:dev (upload unresolved to SwaggerHub)", "reset");
   log("  3. npm run download:resolved (download resolved from SwaggerHub)", "reset");
   log("  4. Both local files now in sync", "reset");
@@ -352,10 +352,10 @@ function showHelp() {
   log("• SwaggerHub CLI must be installed (included in dependencies)", "reset");
   log("");
   log("Output:", "yellow");
-  log("• Default version: carts-openapi.yaml (current version)", "reset");
-  log("• Specific version: carts-openapi-{version}.yaml (e.g., carts-openapi-1.4.2.yaml)", "reset");
+  log("• Default version: checkout-openapi.yaml (current version)", "reset");
+  log("• Specific version: checkout-openapi-{version}.yaml (e.g., checkout-openapi-1.4.2.yaml)", "reset");
   log("• Format: YAML with all $ref references expanded inline", "reset");
-  log("• Location: ../apis/carts/cdk/lib/apigateway/openapi-spec/", "reset");
+  log("• Location: ../apis/checkout/cdk/lib/apigateway/openapi-spec/", "reset");
 }
 
 /**
@@ -384,7 +384,7 @@ function main() {
   const outputPath = getOutputPath(version, options);
   const currentVersion = packageJson.version;
   const isSpecificVersion = options.version && options.version !== currentVersion;
-  const targetFile = isSpecificVersion ? `carts-openapi-${version}.yaml` : "carts-openapi.yaml";
+  const targetFile = isSpecificVersion ? `checkout-openapi-${version}.yaml` : "checkout-openapi.yaml";
 
   if (fs.existsSync(outputPath) && !options.force) {
     log("⚠️  Resolved specification file already exists", "yellow");
@@ -416,7 +416,7 @@ function main() {
   log("💡 Next steps:", "blue");
   if (isSpecificVersion) {
     log("• This versioned file can be used for comparison or historical reference", "reset");
-    log("• Use the default carts-openapi.yaml file for AWS API Gateway deployment", "reset");
+    log("• Use the default checkout-openapi.yaml file for AWS API Gateway deployment", "reset");
   } else {
     log("• The resolved specification is ready for AWS API Gateway deployment", "reset");
   }

@@ -1,0 +1,1418 @@
+openapi: 3.0.3
+info:
+  title: "Digital Commerce - Checkout API"
+  contact:
+    name: "Direct Wines API Support"
+    email: "apisupport@directwines.com"
+  license:
+    name: "Direct Wines Proprietary"
+    url: "https://www.directwines.com"
+    x-notice: "This specification and all related materials are the exclusive property of Direct Wines and may not be used, copied, or distributed without explicit permission."
+  version: 0.3.0
+  description: |
+    This is the API specification for the Digital Commerce Checkout API. It provides operations for:
+    - Order capture with tokenised payment methods (credit cards, Apple Pay, Google Pay)
+    - Order capture with stored payment methods (gift vouchers)
+    - Cart validation and order creation
+    - 3DS authentication flow support
+    
+    ---
+    # Endpoint Types:
+
+    The Checkout API includes two types of endpoints, each suited to different use cases:
+
+    ## 1. **Me API Endpoints:**
+      - *Purpose:* Designed for personalised customer experiences on websites.
+      - *Signature:* Includes `/me` in the URL.
+      - *Example:* `POST /me/token/capture` (Captures order for the authenticated user).
+      - *Access:* Requires an access token that identifies the specific user, including brand, market, and customer_nbr claims.
+      - *Use Case:* Ideal for checkout processes on e-commerce sites where customers manage their own orders.
+
+    ## 2. **Stateless API Endpoints (Per-Brand):**
+      - *Purpose:* Used for broader applications, such as call centres or backend services, where actions are performed on behalf of multiple customers.
+      - *Signature:* Includes `/in-brand/{brandkey}` in the URL.
+      - *Example:* `POST /in-brand/{brandkey}/token/capture` (Captures order within the specified brand).
+      - *Access:* Requires a higher authority token and is scoped per brand, identified by the `brandkey` path parameter.
+      - *Use Case:* Suitable for customer service representatives managing orders across different brands or for backend services handling multi-customer operations.
+
+    ---
+    # Authorisation:
+
+    ## Getting Access Tokens
+    All Checkout API endpoints require OAuth 2.0 access tokens for authorisation:
+
+    - **For RESTful API Access:** Contact the Curity OAuth Identity Server team for credentials and token endpoint details.
+
+    ## Token Requirements
+
+    - **For `/me` Endpoints:**
+      - Guest users: Token must contain an anonymous identity claim
+      - Registered users: Token must contain a customer identity claim
+      
+    - **For `/in-brand/{brandkey}` Endpoints:**
+      - Requires a service account token with appropriate scopes for the specified brand
+
+    ---
+    # Concurrency Control:
+
+    Order capture is immutable: orders are created once and always have `version: 1`. Concurrency control today applies only to the cart you are checking out (via its `version` in the request, returning 409 if stale). A future Amendments API may allow post-checkout changes; then the order `version` will increment and be required for optimistic concurrency. Store it now; use `Idempotency-Key` (not `version`) for safe retries of the same capture request.
+
+    ---
+    # AWS API Gateway Base Path Mapping:
+
+    **Important:** AWS API Gateway automatically prefixes `/checkout` to all endpoint paths through its base path mapping feature. This means:
+    - The paths defined in this specification (e.g., `/me/token/capture`) will be accessible as `/checkout/me/token/capture`
+    - No manual `/checkout` prefix is needed in the OpenAPI specification paths
+
+    ---
+    # Order Capture Process:
+
+    The Order Capture process involves two main steps:
+
+    ## 1. Business Validations
+    - **Cart validation**: Item availability, delivery restrictions, cart state
+    - **Amount matching**: Ensuring payment amounts match cart totals
+    - **Customer validation**: Delivery address, customer status
+
+    ## 2. Payment Processing
+    - **Tokenised payments**: Credit cards, Apple Pay, Google Pay (via existing Payments API)
+    - **Stored payments**: Gift vouchers and other stored payment methods
+    - **3DS handling**: Support for 3D Secure authentication flows
+
+    ## Order Object Design
+    
+    The `Order` object is designed as an intuitive extension of the familiar `Cart` object:
+    - **All Cart fields preserved**: lineItems, totalPrice, shippingInformation, etc.
+    - **Added order status**: COMPLETED, FAILED, REQUIRES_3DS_VALIDATION
+    - **Added payment details**: Shows exactly how the order was paid
+    - **Same Money objects**: Consistent monetary formatting with Cart API
+
+    This approach makes orders immediately understandable - they're "just carts that have been paid for" with clear payment information.
+
+    ## Delivery Address Handling
+
+    **Important:** Delivery address information must be configured within the Cart object before checkout. The Checkout API does not accept delivery address overrides.
+
+    **Process Flow:**
+    1. **Cart Setup**: Delivery address must be set on the cart using the Cart API
+    2. **Address Validation**: Cart validates delivery restrictions and shipping options
+    3. **Checkout**: Checkout API uses the delivery address from the cart
+    4. **Order Creation**: Final order inherits all cart delivery information
+
+    For delivery address management, see the Cart API documentation.
+
+    ---
+    # Checkout Validation Handling Guide
+
+    ## Understanding Checkout Validations
+
+    The Checkout API performs comprehensive business validations during order capture to ensure data integrity and business rule compliance. When validation issues occur, a `422 Business Validation Error` response is returned with detailed validation information.
+
+    ### Validation Categories
+
+    **Order-Level Validations:** Issues affecting the entire checkout process
+    - Cart state problems (not found, version mismatch, empty/locked)
+    - Payment issues (amount mismatch, insufficient funds, declined)
+    - Delivery restrictions
+
+    **Line Item-Level Validations:** Issues with specific products
+    - Stock availability (out of stock, insufficient quantity)
+    - Product availability (discontinued, not saleable)
+    - Compliance restrictions (regulatory, shipping limitations)
+    - Quantity limits (exceeds maximum per order)
+
+    ### Client Implementation Guidelines
+
+    **1. Process All Validations**
+    ```json
+    {
+      "orderLevel": [
+        {"code": "PaymentAmountMismatch", "message": "..."}
+      ],
+      "lineItemLevel": [
+        {"code": "ItemOutOfStock", "message": "...", "lineItemId": "abc123"}
+      ]
+    }
+    ```
+
+    **2. Use Validation Codes for Localization**
+    - **Recommended**: Use the `code` field to implement localized user messages
+    - **Not Recommended**: Display the English `message` field directly to users
+    - The `message` field is intended for developers and debugging
+
+    **3. Present Issues by Category**
+    - Group order-level issues as general checkout problems
+    - Group line item-level issues by the affected products
+    - Use `lineItemId` to map validations back to cart line items
+
+    **4. Require Resolution Before Retry**
+    - All validation issues must be resolved before resubmitting
+    - Order is NOT created when validation errors occur
+    - Users must take corrective action (adjust quantities, change address, etc.)
+
+    ### Common Integration Patterns
+
+    **Handle Multiple Issues:**
+    ```javascript
+    if (response.status === 422) {
+      const validations = response.data;
+
+      // Process order-level issues
+      validations.orderLevel.forEach(validation => {
+        displayOrderError(validation.code, validation.message);
+      });
+
+      // Process line item issues
+      validations.lineItemLevel.forEach(validation => {
+        displayLineItemError(validation.lineItemId, validation.code, validation.message);
+      });
+    }
+    ```
+
+    **Localization Example:**
+    ```javascript
+    function getLocalizedMessage(validationCode) {
+      const messages = {
+        'ItemOutOfStock': t('checkout.errors.item_out_of_stock'),
+        'PaymentAmountMismatch': t('checkout.errors.payment_mismatch'),
+        // ... other codes
+      };
+      return messages[validationCode] || t('checkout.errors.generic');
+    }
+    ```
+
+servers:
+  - description: SwaggerHub API Auto Mocking
+    url: https://virtserver.swaggerhub.com/Direct_Wines/checkout-api/0.3.0
+  - description: Direct Wines - API Gateway - Production
+    url: https://prod.api.directwines.com/checkout
+  - description: Direct Wines - API Gateway - UAT
+    url: https://uat.api.directwines.com/checkout
+  - description: Direct Wines - API Gateway - SIT
+    url: https://sit.api.directwines.com/checkout
+
+tags:
+  - name: Personal Checkout API
+    description: Operations for authenticated customers to checkout their own carts
+  - name: Stateless Checkout API
+    description: Operations for agents and services to checkout carts on behalf of customers
+  - name: CORS
+    description: Cross-Origin Resource Sharing support
+
+paths:
+  /me/token/capture:
+    post:
+      tags:
+        - Personal Checkout API
+      summary: Capture order for authenticated customer
+      description: |
+        Captures an order from a cart for the authenticated customer. This operation
+        performs final business validations on the cart and processes payment using
+        the provided payment methods.
+        
+        **Process Flow:**
+        1. **Cart Validation**: Verifies cart state, item availability, delivery restrictions (using cart's delivery address)
+        2. **Payment Processing**: Processes tokenised and/or stored payment methods
+        3. **Order Creation**: Creates order with payment details, status, and delivery information from cart
+        
+        **Payment Methods Supported:**
+        - **Tokenised**: Credit cards, Apple Pay, Google Pay (via Payments API)
+        - **Stored**: Gift vouchers and other stored payment methods
+        - **Multiple**: Can combine multiple payment methods (e.g., gift voucher + credit card)
+        
+        **3DS Support:**
+        - If 3DS authentication is required, returns status `REQUIRES_3DS_VALIDATION`
+        - Provides 3DS challenge URL for customer completion
+        - Use Payments API `/3ds/validate-capture` endpoint to complete after 3DS
+
+        **Address Handling:**
+        - **Delivery Address**: Must be configured on the cart before checkout (no override supported)
+        - **Billing Address**: Optional override for payment processing; defaults to delivery address if not provided
+        - Cart API should be used to set and validate delivery address before checkout
+
+        **Example usage:**
+
+        `POST /checkout/me/token/capture`
+      operationId: captureOrderForMe
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutDraft"
+            examples:
+              single-tokenised-payment:
+                summary: Single credit card payment
+                value:
+                  cartId: "3169811e-fa0a-789"
+                  version: 1
+                  payments:
+                    - type: "tokenised"
+                      amount:
+                        amount: 49.99
+                        currencyCode: "GBP"
+                      tokenisedPayment:
+                        merchantId: "YOUR_MID"
+                        paymentToken: "tkn_abc123xyz"
+                        tokenType: "TRANSIENT"
+                        billTo:
+                          firstName: "John"
+                          lastName: "Doe"
+                          address1: "123 Main Street"
+                          city: "London"
+                          postalCode: "SW1A 1AA"
+                          country: "GB"
+                          email: "customer@example.com"
+              mixed-payment-methods:
+                summary: Gift voucher + credit card payment
+                value:
+                  cartId: "3169811e-fa0a-789"
+                  version: 1
+                  payments:
+                    - type: "stored"
+                      amount:
+                        amount: 20.00
+                        currencyCode: "GBP"
+                      storedPayment:
+                        paymentMethod: "giftvoucher"
+                        giftVoucherDetails:
+                          voucherCode: "GV-2024-ABC123"
+                          pin: "1234"
+                    - type: "tokenised"
+                      amount:
+                        amount: 29.99
+                        currencyCode: "GBP"
+                      tokenisedPayment:
+                        merchantId: "YOUR_MID"
+                        paymentToken: "tkn_xyz789def"
+                        tokenType: "TRANSIENT"
+                        billTo:
+                          firstName: "Jane"
+                          lastName: "Smith"
+                          address1: "456 High Street"
+                          city: "Manchester"
+                          postalCode: "M1 1AA"
+                          country: "GB"
+                          email: "jane.smith@example.com"
+      responses:
+        "200":
+          description: Order captured successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+              examples:
+                completed-single-payment:
+                  summary: Successfully completed order with single payment
+                  value:
+                    id: "order-3169811e-fa0a-789"
+                    version: 1
+                    status: "COMPLETED"
+                    totalLineItems: 2
+                    totalItemQuantity: 3
+                    numberOfBottles: 36
+                    totalListPrice:
+                      amount: 57.97
+                      currencyCode: "GBP"
+                    totalPrice:
+                      amount: 49.97
+                      currencyCode: "GBP"
+                    customerId: "c1e2d3f4-5a6b-7c8d-9e0f-1a2b3c4d5e6f"
+                    responseCode: "VAJ1C"
+                    paymentDetails:
+                      - type: "tokenised"
+                        amount:
+                          amount: 49.97
+                          currencyCode: "GBP"
+                        status: "completed"
+                        tokenisedPaymentResult:
+                          transactionId: "auth_12345678"
+                          authorisationCode: "123456"
+                          merchantReference: "YOUR_MID"
+                    createdAt: "2025-04-22T17:30:00Z"
+                    lastModifiedAt: "2025-04-22T17:30:00Z"
+                completed-mixed-payment:
+                  summary: Successfully completed order with mixed payment methods
+                  value:
+                    id: "order-3169811e-fa0a-456"
+                    version: 1
+                    status: "COMPLETED"
+                    totalLineItems: 1
+                    totalItemQuantity: 2
+                    numberOfBottles: 24
+                    totalListPrice:
+                      amount: 79.98
+                      currencyCode: "GBP"
+                    totalPrice:
+                      amount: 69.98
+                      currencyCode: "GBP"
+                    customerId: "c1e2d3f4-5a6b-7c8d-9e0f-1a2b3c4d5e6f"
+                    paymentDetails:
+                      - type: "stored"
+                        amount:
+                          amount: 20.00
+                          currencyCode: "GBP"
+                        status: "completed"
+                        storedPaymentResult:
+                          paymentMethod: "giftvoucher"
+                          transactionId: "gv_txn_789123"
+                          remainingBalance:
+                            amount: 15.00
+                            currencyCode: "GBP"
+                      - type: "tokenised"
+                        amount:
+                          amount: 49.98
+                          currencyCode: "GBP"
+                        status: "completed"
+                        tokenisedPaymentResult:
+                          transactionId: "auth_87654321"
+                          authorisationCode: "654321"
+                          merchantReference: "YOUR_MID"
+                    createdAt: "2025-04-22T17:30:00Z"
+                    lastModifiedAt: "2025-04-22T17:30:00Z"
+                requires-3ds-validation:
+                  summary: Order requires 3DS authentication
+                  value:
+                    id: "order-3169811e-fa0a-321"
+                    version: 1
+                    status: "REQUIRES_3DS_VALIDATION"
+                    totalLineItems: 1
+                    totalItemQuantity: 1
+                    numberOfBottles: 6
+                    totalListPrice:
+                      amount: 180.00
+                      currencyCode: "EUR"
+                    totalPrice:
+                      amount: 159.99
+                      currencyCode: "EUR"
+                    customerId: "c1e2d3f4-5a6b-7c8d-9e0f-1a2b3c4d5e6f"
+                    paymentDetails:
+                      - type: "tokenised"
+                        amount:
+                          amount: 159.99
+                          currencyCode: "EUR"
+                        status: "requires_3ds"
+                        tokenisedPaymentResult:
+                          transactionId: "7507655240516609704808"
+                          threeDSUrl: "https://3ds.psp.com/challenge/abc123"
+                          merchantReference: "YOUR_MID"
+                    createdAt: "2025-04-22T17:30:00Z"
+                    lastModifiedAt: "2025-04-22T17:30:00Z"
+        "400":
+          $ref: "#/components/responses/StructureError"
+        "401":
+          $ref: "#/components/responses/UnauthorisedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "409":
+          description: |
+            **Conflict Errors**
+            
+            409 errors occur when there are conflicts with the current state:
+            - Cart version mismatch (optimistic concurrency control)
+            - Duplicate idempotency key with different parameters
+          content:
+            application/json:
+              schema:
+                $ref: "https://api.swaggerhub.com/apis/Direct_Wines/CommonModelDefinitionSuite/1.0.0#/components/schemas/ErrorMessageResponse"
+        "422":
+          $ref: "#/components/responses/BusinessError"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+      security:
+        - GlobalAuthoriser: []
+      x-amazon-apigateway-integration:
+        uri: "arn:aws:apigateway:${AWSRegion}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWSRegion}:${ServiceAccountID}:function:dwaws-${Environment}-checkout-order-capture-lambda/invocations"
+        responses:
+          default:
+            statusCode: 200
+            responseParameters:
+              method.response.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+        passthroughBehavior: never
+        httpMethod: POST
+        type: aws_proxy
+
+    options:
+      tags:
+        - CORS
+      summary: Informs the clients which CORS methods are available and for what domains.
+      operationId: captureOrderForMeOptions
+      description: |
+        This operation is exposed for managing CORS with pre-flight requests sent by clients
+        before order capture operation.
+
+        **Example usage:**
+
+        `OPTIONS /checkout/me/token/capture`
+      x-amazon-apigateway-integration:
+        uri: "arn:aws:apigateway:${AWSRegion}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWSRegion}:${ServiceAccountID}:function:dwaws-${Environment}-checkout-order-capture-lambda/invocations"
+        responses:
+          default:
+            statusCode: 200
+            responseParameters:
+              method.response.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,Idempotency-Key'"
+              method.response.header.Access-Control-Allow-Origin: "'None'"
+        passthroughBehavior: never
+        httpMethod: POST
+        type: aws_proxy
+      x-amazon-apigateway-auth:
+        type: "NONE"
+      responses:
+        "200":
+          description: "Options pre-flight request successfully acknowledged"
+          headers:
+            Strict-Transport-Security:
+              schema:
+                type: string
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/StructureError"
+
+  /in-brand/{brandkey}/token/capture:
+    post:
+      tags:
+        - Stateless Checkout API
+      summary: Capture order within specified brand
+      description: |
+        Captures an order from a cart within the specified brand. This operation is intended
+        for authenticated agents acting on behalf of customers, such as call center 
+        representatives or backend services.
+        
+        **Process Flow:**
+        1. **Brand Validation**: Verifies brandkey and agent permissions
+        2. **Cart Validation**: Verifies cart state, item availability, delivery restrictions (using cart's delivery address)
+        3. **Payment Processing**: Processes tokenised and/or stored payment methods
+        4. **Order Creation**: Creates order with payment details, status, and delivery information from cart
+        
+        **Payment Methods Supported:**
+        - **Tokenised**: Credit cards, Apple Pay, Google Pay (via Payments API)
+        - **Stored**: Gift vouchers and other stored payment methods
+        - **Multiple**: Can combine multiple payment methods (e.g., gift voucher + credit card)
+        
+        **3DS Support:**
+        - If 3DS authentication is required, returns status `REQUIRES_3DS_VALIDATION`
+        - Provides 3DS challenge URL for customer completion
+        - Use Payments API `/in-brand/{brandkey}/3ds/validate-capture` endpoint to complete after 3DS
+
+        **Address Handling:**
+        - **Delivery Address**: Must be configured on the cart before checkout (no override supported)
+        - **Billing Address**: Optional override for payment processing; defaults to delivery address if not provided
+        - Cart API should be used to set and validate delivery address before checkout
+
+        **Example usage:**
+
+        `POST /checkout/in-brand/uklait/token/capture`
+      operationId: captureOrderInBrand
+      parameters:
+        - in: path
+          name: brandkey
+          required: true
+          description: |
+            Key of the brand.
+          schema:
+            type: string
+          examples:
+            example-uk-brand:
+              value: "uklait"
+            example-us-brand:
+              value: "us4s"
+            example-au-brand:
+              value: "auwp"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutDraft"
+            examples:
+              single-tokenised-payment:
+                summary: Single credit card payment for call center
+                value:
+                  cartId: "3169811e-fa0a-456"
+                  version: 2
+                  payments:
+                    - type: "tokenised"
+                      amount:
+                        amount: 89.99
+                        currencyCode: "GBP"
+                      tokenisedPayment:
+                        merchantId: "YOUR_MID"
+                        paymentToken: "tkn_callcenter123"
+                        tokenType: "TRANSIENT"
+                        billTo:
+                          firstName: "Mary"
+                          lastName: "Customer"
+                          address1: "456 Customer Street"
+                          city: "Edinburgh"
+                          postalCode: "EH1 1AA"
+                          country: "GB"
+                          email: "mary.customer@example.com"
+              mixed-payment-methods:
+                summary: Gift voucher + credit card payment via agent
+                value:
+                  cartId: "3169811e-fa0a-456"
+                  version: 2
+                  payments:
+                    - type: "stored"
+                      amount:
+                        amount: 50.00
+                        currencyCode: "GBP"
+                      storedPayment:
+                        paymentMethod: "giftvoucher"
+                        giftVoucherDetails:
+                          voucherCode: "GV-2024-XYZ789"
+                          pin: "5678"
+                    - type: "tokenised"
+                      amount:
+                        amount: 39.99
+                        currencyCode: "GBP"
+                      tokenisedPayment:
+                        merchantId: "YOUR_MID"
+                        paymentToken: "tkn_agent456"
+                        tokenType: "TRANSIENT"
+                        billTo:
+                          firstName: "David"
+                          lastName: "Client"
+                          address1: "789 Client Road"
+                          city: "Glasgow"
+                          postalCode: "G1 1AA"
+                          country: "GB"
+                          email: "david.client@example.com"
+              backend-service-payment:
+                summary: Automated backend service payment
+                value:
+                  cartId: "3169811e-fa0a-456"
+                  version: 3
+                  payments:
+                    - type: "tokenised"
+                      amount:
+                        amount: 125.00
+                        currencyCode: "EUR"
+                      tokenisedPayment:
+                        merchantId: "YOUR_MID"
+                        paymentToken: "tkn_backend789"
+                        tokenType: "STORED"
+                        billTo:
+                          firstName: "Service"
+                          lastName: "Account"
+                          address1: "999 Service Ave"
+                          city: "Dublin"
+                          postalCode: "D01 1AA"
+                          country: "IE"
+                          email: "service@example.com"
+      responses:
+        "200":
+          description: Order captured successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/StructureError"
+        "401":
+          $ref: "#/components/responses/UnauthorisedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "409":
+          description: |
+            **Conflict Errors**
+            
+            409 errors occur when there are conflicts with the current state:
+            - Cart version mismatch (optimistic concurrency control)
+            - Duplicate idempotency key with different parameters
+          content:
+            application/json:
+              schema:
+                $ref: "https://api.swaggerhub.com/apis/Direct_Wines/CommonModelDefinitionSuite/1.0.0#/components/schemas/ErrorMessageResponse"
+        "422":
+          $ref: "#/components/responses/BusinessError"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+      security:
+        - GlobalAuthoriser: []
+      x-amazon-apigateway-integration:
+        uri: "arn:aws:apigateway:${AWSRegion}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWSRegion}:${ServiceAccountID}:function:dwaws-${Environment}-checkout-order-capture-lambda/invocations"
+        responses:
+          default:
+            statusCode: 200
+            responseParameters:
+              method.response.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+        passthroughBehavior: never
+        httpMethod: POST
+        type: aws_proxy
+
+    options:
+      tags:
+        - CORS
+      summary: Informs the clients which CORS methods are available and for what domains.
+      operationId: captureOrderInBrandOptions
+      description: |
+        This operation is exposed for managing CORS with pre-flight requests sent by clients
+        before order capture operation.
+
+        **Example usage:**
+
+        `OPTIONS /checkout/in-brand/uklait/token/capture`
+      parameters:
+        - in: path
+          name: brandkey
+          required: true
+          description: |
+            Key of the brand.
+          schema:
+            type: string
+          examples:
+            example-uk-brand:
+              value: "uklait"
+            example-us-brand:
+              value: "us4s"
+            example-au-brand:
+              value: "auwp"
+      x-amazon-apigateway-integration:
+        uri: "arn:aws:apigateway:${AWSRegion}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWSRegion}:${ServiceAccountID}:function:dwaws-${Environment}-checkout-order-capture-lambda/invocations"
+        responses:
+          default:
+            statusCode: 200
+            responseParameters:
+              method.response.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,Idempotency-Key'"
+              method.response.header.Access-Control-Allow-Origin: "'None'"
+        passthroughBehavior: never
+        httpMethod: POST
+        type: aws_proxy
+      x-amazon-apigateway-auth:
+        type: "NONE"
+      responses:
+        "200":
+          description: "Options pre-flight request successfully acknowledged"
+          headers:
+            Strict-Transport-Security:
+              schema:
+                type: string
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/StructureError"
+
+components:
+  securitySchemes:
+    GlobalAuthoriser:
+      type: "apiKey"
+      name: "Authorization"
+      in: "header"
+      x-amazon-apigateway-authtype: "custom"
+      x-amazon-apigateway-authorizer:
+        type: "request"
+        authorizerUri: "arn:aws:apigateway:${AWSRegion}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWSRegion}:${CIDMAccountID}:function:dwaws-${CIDMEnvironment}-cidm-global-authoriser-lambda/invocations"
+        authorizerCredentials: "arn:aws:iam::${ApiAccountID}:role/dwaws-${CIDMEnvironment}-cidm-globalauthorizer-execution-iam-role"
+        authorizerResultTtlInSeconds: 300
+        identitySource: "method.request.header.Authorization"
+
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      schema:
+        type: string
+      required: true
+      example: C12318814253057        
+
+      description: |
+        Unique key to prevent duplicate transactions. This will be implemented by
+        the underlying PSP where supported.
+          A unique header that payment service providers (PSPs) use to detect and reject—or silently replay—the same unsafe request (e.g. POST /in-brand/{brandkey}/token/capture) within their retention window.
+
+          If the key has already been used:
+          • Many PSPs replay the original 2xx/4xx response.
+          • Some _(e.g. Worldline; Stripe when params differ)_ reply `409 Conflict`.
+
+          This guards against accidental double-charges on retries.
+          -  **Example (Cybersource suggestion):** `C12318814253057`.   _merchantIdLast4 + JulianDay + hhmmss + counter — 15 chars._
+          -  **Example (Worldline suggestion):**  
+            _Worldline expects any unique value (typically a UUID). Keys are kept for 24 h; a duplicate request replays the first response or returns `409 Conflict` if the initial call is still processing._
+          - **Any globally-unique value is valid**—you can just as easily send a UUID or another timestamp-based key—so long as you reuse the *same* value on every retry of the same request.
+
+          This is **not** to be confused with `version`, which enforces optimistic concurrency on API-managed resources such as carts or customers.
+
+  schemas:
+    # ----------------------------------------
+    #  Common Objects
+    
+    # Money schema moved to shared domain schema:
+  # https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/Money
+
+    Address:
+      type: object
+      properties:
+        firstName:
+          type: string
+          example: "John"
+          description: First name of the customer.
+        lastName:
+          type: string
+          example: "Doe"
+          description: Last name of the customer.
+        address1:
+          type: string
+          example: "123 Main Street"
+          description: Primary street address (address line 1).
+        city:
+          type: string
+          example: "London"
+          description: City or locality.
+        postalCode:
+          type: string
+          example: "SW1A 1AA"
+          description: Postal or ZIP code.
+        country:
+          type: string
+          pattern: "^[A-Z]{2}$"
+          example: "GB"
+          description: Two-letter ISO country code.
+        email:
+          type: string
+          format: email
+          example: "customer@example.com"
+          description: Customer email address.
+        phone:
+          type: string
+          example: "+44123456789"
+          description: Customer phone number.
+
+    # ----------------------------------------
+    #  Input Objects
+
+    CheckoutDraft:
+      type: object
+      description: |
+        A CheckoutDraft represents the data required to capture an order from a cart.
+        This includes cart identification, payment methods, and optional address overrides.
+
+        **Billing Address**: The optional `billingAddress` field provides a billing address override.
+        If not provided, the system uses the delivery address or customer profile address.
+      required:
+        - cartId
+        - version
+        - payments
+      properties:
+        cartId:
+          type: string
+          description: |
+            The unique identifier of the cart to checkout.
+            This cart must exist and be in a valid state for checkout.
+          example: "3169811e-fa0a-789"
+        version:
+          type: integer
+          format: int32
+          description: |
+            Expected version of the Cart to checkout. If the expected version does not 
+            match the actual version, a 409 Conflict is returned.
+          example: 1
+        payments:
+          type: array
+          minItems: 1
+          description: |
+            Array of payments to use for this order. The sum of all payment
+            amounts must equal the cart total. Supports multiple payments
+            (e.g., partial gift voucher + credit card).
+          items:
+            $ref: "#/components/schemas/Payment"
+        billingAddress:
+          $ref: "#/components/schemas/Address"
+
+    Payment:
+      type: object
+      description: |
+        A payment instruction used for checkout. Can be either tokenised payments
+        (credit cards, Apple Pay, Google Pay) or stored payments (gift vouchers).
+
+        **Amount**: Amount to charge using this payment. The sum of all payment
+        amounts must equal the cart total.
+
+        **Tokenised Payment**: Tokenised payment details (required when type="tokenised").
+        Uses the same structure as the Payments API TokenAuthoriseRequest.
+
+        **Stored Payment**: Stored payment details (required when type="stored").
+      required:
+        - type
+        - amount
+      properties:
+        type:
+          type: string
+          enum: [tokenised, stored]
+          description: |
+            Type of payment:
+            - tokenised: Credit cards, Apple Pay, Google Pay (processed via Payments API)
+            - stored: Gift vouchers and other stored payment methods.
+          example: "tokenised"
+        amount:
+          $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/Money'
+        tokenisedPayment:
+          $ref: "#/components/schemas/TokenisedPaymentDetails"
+        storedPayment:
+          $ref: "#/components/schemas/StoredPaymentDetails"
+
+    TokenisedPaymentDetails:
+      type: object
+      description: |
+        Tokenised payment details. This is a subset of the TokenAuthoriseRequest
+        from the Payments API, containing the essential fields needed for checkout.
+
+        **Bill To**: Billing address information.
+      required:
+        - merchantId
+        - paymentToken
+        - tokenType
+        - billTo
+      properties:
+        merchantId:
+          type: string
+          example: "YOUR_MID"
+          description: Unique merchant identifier assigned by the PSP.
+        paymentToken:
+          type: string
+          example: "tkn_abc123xyz"
+          description: Payment token for processing.
+        tokenType:
+          type: string
+          enum: [TRANSIENT, STORED]
+          example: "TRANSIENT"
+          description: Token type ('TRANSIENT' for single-use, 'STORED' for saved tokens).
+        setupRecurring:
+          type: boolean
+          example: false
+          description: Flag indicating if payment should set up a subscription for future recurring charges (only valid with transient tokens).
+        billTo:
+          $ref: "#/components/schemas/Address"
+        threeDSData:
+          type: object
+          additionalProperties: true
+          description: 3DS authentication data from Payments API setup.
+
+    StoredPaymentDetails:
+      type: object
+      description: |
+        Stored payment details. Currently supports gift vouchers,
+        extensible for future stored payment types.
+
+        **Gift Voucher Details**: Gift voucher payment details (required when paymentMethod="giftvoucher").
+      required:
+        - paymentMethod
+      properties:
+        paymentMethod:
+          type: string
+          enum: [giftvoucher]
+          description: |
+            Type of stored payment:
+            - giftvoucher: Gift voucher payment.
+          example: "giftvoucher"
+        giftVoucherDetails:
+          $ref: "#/components/schemas/GiftVoucherPaymentDetails"
+
+    GiftVoucherPaymentDetails:
+      type: object
+      description: Gift voucher payment details.
+      required:
+        - voucherCode
+      properties:
+        voucherCode:
+          type: string
+          description: Gift voucher code or identifier.
+          example: "GV-2024-ABC123"
+        pin:
+          type: string
+          description: Optional PIN or security code for the gift voucher.
+          example: "1234"
+
+    # ----------------------------------------
+    #  Output Objects
+
+    Order:
+      type: object
+      description: |
+        An Order represents a completed checkout of a cart. It contains all the information
+        from the original cart plus payment details and order status.
+
+        **Order = Cart + Payment Details + Order Status**
+
+        This design makes orders intuitive - they're "carts that have been paid for" with
+        clear information about how the payment was processed.
+
+        **Total List Price**: Total undiscounted price of all line items.
+
+        **Total Price**: Final payable amount after all discounts (same as Cart).
+      required:
+        - id
+        - version
+        - status
+        - paymentDetails
+        - createdAt
+      properties:
+        # All Cart fields (inherited) - same structure as Cart API
+        id:
+          type: string
+          description: Unique identifier of the Order (was cartId in original cart).
+          example: "order-3169811e-fa0a-789"
+        version:
+          type: number
+          description: Current version of the Order.
+          example: 1
+        totalLineItems:
+          type: number
+          description: Total number of line items in the Order.
+          example: 2
+        totalItemQuantity:
+          type: number
+          description: Total quantity of line items in the Order.
+          example: 3
+        numberOfBottles:
+          type: number
+          description: Total number of bottles in the Order.
+          example: 36
+        lineItems:
+          type: array
+          description: List of line items in the Order (same structure as Cart).
+          items:
+            oneOf:
+              - $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/LineItem'
+              - $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/GiftVoucherLineItem'
+        totalListPrice:
+          $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/Money'
+        lineItemSavings:
+          $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/CartLineItemSavings'
+        shippingInformation:
+          $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/ShippingInformation'
+        totalPrice:
+          $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/Money'
+        locationContext:
+          $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/LocationContext'
+        defaultFulfillmentContext:
+          $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/DefaultFulfillmentContext'
+        customerNbr:
+          type: string
+          description: Customer number associated with the Order.
+          example: "13218264"
+        customerId:
+          type: string
+          description: Customer ID associated with the Order.
+          example: "c1e2d3f4-5a6b-7c8d-9e0f-1a2b3c4d5e6f"
+        anonymousId:
+          type: string
+          description: Anonymous ID associated with the Order (for guest checkouts).
+          example: "d1e2d3f4-5a6b-7c8d-9e0f-1a2b3c4d5e6f"
+        responseCode:
+          type: string
+          description: Promo Code (Response Code) associated with the Order.
+          example: "VAJ1C"
+        cid:
+          type: string
+          description: Campaign ID (CID) associated with the Order.
+          example: "CM/123456"
+        
+        # NEW: Order-specific fields
+        status:
+          type: string
+          enum: [COMPLETED, FAILED, REQUIRES_3DS_VALIDATION]
+          description: |
+            Current status of the order:
+            - COMPLETED: Order successfully completed and payment captured
+            - FAILED: Order failed due to payment or business validation issues
+            - REQUIRES_3DS_VALIDATION: Order requires 3DS authentication before completion.
+          example: "COMPLETED"
+        paymentDetails:
+          type: array
+          description: |
+            Array of payment methods used for this order. Shows exactly how the 
+            order was paid, including amounts and payment status for each method.
+          items:
+            $ref: "#/components/schemas/OrderPaymentDetail"
+        createdAt:
+          type: string
+          format: date-time
+          description: Date and time when the Order was created.
+          example: "2025-04-22T17:30:00Z"
+        lastModifiedAt:
+          type: string
+          format: date-time
+          description: Date and time when the Order was last modified.
+          example: "2025-04-22T17:30:00Z"
+
+    OrderPaymentDetail:
+      type: object
+      description: |
+        Details of a payment method used for an order, including the amount
+        charged and the status of that specific payment.
+
+        **Amount**: Amount charged using this payment method.
+
+        **Tokenised Payment Result**: Results from tokenised payment processing (when type="tokenised").
+
+        **Stored Payment Result**: Results from stored payment processing (when type="stored").
+      required:
+        - type
+        - amount
+        - status
+      properties:
+        type:
+          type: string
+          enum: [tokenised, stored]
+          description: Type of payment method used.
+          example: "tokenised"
+        amount:
+          $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/Money'
+        status:
+          type: string
+          enum: [completed, failed, requires_3ds]
+          description: |
+            Status of this specific payment:
+            - completed: Payment successfully processed
+            - failed: Payment failed or was declined
+            - requires_3ds: Payment requires 3DS authentication.
+          example: "completed"
+        tokenisedPaymentResult:
+          $ref: "#/components/schemas/TokenisedPaymentResult"
+        storedPaymentResult:
+          $ref: "#/components/schemas/StoredPaymentResult"
+
+    TokenisedPaymentResult:
+      type: object
+      description: Result details from tokenised payment processing.
+      properties:
+        transactionId:
+          type: string
+          description: Transaction ID from payment processor.
+          example: "auth_12345678"
+        authorisationCode:
+          type: string
+          description: Authorisation code from the issuing bank.
+          example: "123456"
+        threeDSUrl:
+          type: string
+          format: uri
+          description: 3DS challenge URL (if status is requires_3ds).
+          example: "https://3ds.psp.com/challenge/abc123"
+        merchantReference:
+          type: string
+          description: Merchant reference for the payment.
+          example: "YOUR_MID"
+
+    StoredPaymentResult:
+      type: object
+      description: |
+        Result details from stored payment processing.
+
+        **Remaining Balance**: Remaining balance on gift voucher after payment (if applicable).
+      properties:
+        paymentMethod:
+          type: string
+          enum: [giftvoucher]
+          description: Type of stored payment method used.
+          example: "giftvoucher"
+        transactionId:
+          type: string
+          description: Transaction ID for the stored payment.
+          example: "gv_txn_789123"
+        remainingBalance:
+          $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/Money'
+
+    CheckoutValidations:
+      type: object
+      description: |
+        Contains validation results for checkout order capture that prevent successful completion.
+        These validations indicate business rule violations discovered during order processing.
+
+        The validations are categorized into two levels:
+        1. **Order Level**: Validations that apply to the entire order (e.g., payment mismatches, delivery restrictions).
+        2. **Line Item Level**: Validations that apply to specific line items (e.g., stock availability, compliance issues).
+
+        > **IMPORTANT FOR CLIENT IMPLEMENTATIONS**: When validation errors occur, the order is NOT created.
+        > Clients should present all validation issues to users and require resolution before resubmitting.
+      properties:
+        orderLevel:
+          type: array
+          description: |
+            Validations that apply to the entire order (e.g., payment amount mismatches,
+            delivery restrictions, cart state issues).
+          items:
+            $ref: "#/components/schemas/CheckoutValidationMessage"
+        lineItemLevel:
+          type: array
+          description: |
+            Validations that apply to specific line items (e.g., stock availability,
+            compliance restrictions).
+          items:
+            $ref: "#/components/schemas/LineItemCheckoutValidation"
+
+    CheckoutValidationMessage:
+      type: object
+      description: |
+        A validation message for checkout order capture containing both a language-neutral code and human-readable message.
+
+        > **IMPORTANT FOR CLIENT IMPLEMENTATIONS**: API clients are strongly recommended to use the `code` property
+        > for identifying and localizing validation messages in their applications. The `message` property is
+        > primarily intended as a system message in English and should not be directly presented to end-users.
+
+        ## Checkout Validation Codes
+
+        The system uses standardized codes to indicate specific checkout validation issues:
+
+        ### Order-Level Validation Codes
+        | Code | Description |
+        |------|-------------|
+        | `CartNotFound` | The specified cart does not exist or is not accessible |
+        | `CartVersionMismatch` | The cart version has changed since the checkout request was made |
+        | `InvalidCartState` | The cart is in a state that prevents checkout (empty, locked, etc.) |
+        | `PaymentAmountMismatch` | Payment amounts do not match cart total |
+        | `DeliveryRestriction` | Delivery is not available to the specified address |
+        | `InsufficientFunds` | Insufficient funds on gift voucher or stored payment method |
+        | `PaymentDeclined` | Payment was declined by the payment processor |
+
+        ### Line Item-Level Validation Codes
+        | Code | Description |
+        |------|-------------|
+        | `ItemUnavailable` | The line item is no longer available for purchase |
+        | `ItemOutOfStock` | The requested quantity exceeds available stock |
+        | `ComplianceRestriction` | The item cannot be sold due to regulatory restrictions |
+        | `QuantityExceedsLimit` | The requested quantity exceeds the maximum allowed for this item |
+
+        These codes help clients implement appropriate handling for each validation scenario.
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: |
+            Language-neutral code that identifies this validation issue.
+
+            **RECOMMENDED FOR LOCALIZATION**: API clients should use this code to implement localized
+            messages in their applications. This approach enables clients to present validation messages
+            appropriate to their users' languages and contexts.
+          enum:
+            # Order-level validation codes
+            - CartNotFound
+            - CartVersionMismatch
+            - InvalidCartState
+            - PaymentAmountMismatch
+            - DeliveryRestriction
+            - InsufficientFunds
+            - PaymentDeclined
+            # Line item-level validation codes
+            - ItemUnavailable
+            - ItemOutOfStock
+            - ComplianceRestriction
+            - QuantityExceedsLimit
+          x-enum-descriptions:
+            - "The specified cart does not exist or is not accessible to the current user"
+            - "The cart version has changed since the checkout request was initiated"
+            - "The cart is in a state that prevents checkout (empty, locked, or invalid)"
+            - "The sum of payment amounts does not match the cart total"
+            - "Delivery is not available to the specified delivery address"
+            - "Insufficient funds available on gift voucher or stored payment method"
+            - "Payment was declined by the payment processor or gateway"
+            - "The line item is no longer available for purchase"
+            - "The requested quantity exceeds the available stock for this item"
+            - "The item cannot be sold due to regulatory or compliance restrictions"
+            - "The requested quantity exceeds the maximum allowed per order for this item"
+          example: "ItemOutOfStock"
+        message:
+          type: string
+          description: |
+            Human-readable message explaining the validation issue (provided in English only).
+
+            **NOTE**: While this property provides helpful context for developers and debugging,
+            it is not intended for direct presentation to end users. API clients should use the
+            `code` property to generate properly localized messages for their users.
+          example: "Only 15 units of 'The Black Stump Durif Shiraz 2021' are available, but 24 were requested."
+
+    LineItemCheckoutValidation:
+      type: object
+      description: |
+        A validation message that applies to a specific line item in the checkout order.
+      allOf:
+        - $ref: "#/components/schemas/CheckoutValidationMessage"
+        - type: object
+          required:
+            - lineItemId
+          properties:
+            lineItemId:
+              type: string
+              description: |
+                ID of the line item to which this validation applies. This matches the
+                line item ID from the original cart.
+              example: "e64c4dc9-ec1a-4d63-b96f-9ab1ac99f1a1"
+
+  responses:
+    StructureError:
+      $ref: "https://api.swaggerhub.com/apis/Direct_Wines/CommonModelDefinitionSuite/1.0.0#/components/responses/StructureError"
+    UnauthorisedError:
+      $ref: "https://api.swaggerhub.com/apis/Direct_Wines/CommonModelDefinitionSuite/1.0.0#/components/responses/UnauthorisedError"
+    ForbiddenError:
+      $ref: "https://api.swaggerhub.com/apis/Direct_Wines/CommonModelDefinitionSuite/1.0.0#/components/responses/ForbiddenError"
+    BusinessError:
+      description: |-
+        ## Business Validation Errors
+
+        A 422 is returned when the checkout data is structurally correct but there are business validation
+        issues that prevent order completion. The response contains detailed validation information organized
+        by order-level and line item-level issues.
+
+        ### Validation Structure
+        - **Order Level**: Issues affecting the entire order (payment, delivery, cart state)
+        - **Line Item Level**: Issues specific to individual line items (stock, compliance)
+
+        ### Common Validation Scenarios
+        **Order-Level Issues:**
+        * `CartNotFound` - Cart does not exist or is not accessible
+        * `CartVersionMismatch` - Cart was modified after checkout initiated
+        * `InvalidCartState` - Cart is empty, locked, or invalid
+        * `PaymentAmountMismatch` - Payment amounts don't match cart total
+        * `DeliveryRestriction` - Delivery unavailable to specified address
+        * `InsufficientFunds` - Insufficient gift voucher balance
+        * `PaymentDeclined` - Payment declined by processor
+
+        **Line Item Issues:**
+        * `ItemUnavailable` - Item no longer available for purchase
+        * `ItemOutOfStock` - Requested quantity exceeds available stock
+        * `ComplianceRestriction` - Regulatory restrictions prevent sale
+        * `QuantityExceedsLimit` - Quantity exceeds maximum allowed
+
+        > **Client Implementation**: Process all validations and present issues to users for resolution before resubmitting.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CheckoutValidations"
+          examples:
+            single-order-validation:
+              summary: Single order-level validation issue
+              value:
+                orderLevel:
+                  - code: "PaymentAmountMismatch"
+                    message: "Payment total of £45.99 does not match cart total of £49.99."
+                lineItemLevel: []
+            single-item-validation:
+              summary: Single line item validation issue
+              value:
+                orderLevel: []
+                lineItemLevel:
+                  - code: "ItemOutOfStock"
+                    message: "Only 15 units of 'The Black Stump Durif Shiraz 2021' are available, but 24 were requested."
+                    lineItemId: "e64c4dc9-ec1a-4d63-b96f-9ab1ac99f1a1"
+            multiple-mixed-validations:
+              summary: Multiple order and item validation issues
+              value:
+                orderLevel:
+                  - code: "DeliveryRestriction"
+                    message: "Express delivery is not available to postcodes in remote areas (AB12 3CD)."
+                  - code: "InsufficientFunds"
+                    message: "Gift voucher balance of £25.00 is insufficient for requested payment of £30.00."
+                lineItemLevel:
+                  - code: "ItemOutOfStock"
+                    message: "Only 8 units of 'Château Margaux 2015' are available, but 12 were requested."
+                    lineItemId: "e64c4dc9-ec1a-4d63-b96f-9ab1ac99f1a1"
+                  - code: "ComplianceRestriction"
+                    message: "This item cannot be shipped to Connecticut due to regulatory restrictions."
+                    lineItemId: "b23f4dc9-ec1a-4d63-b96f-9ab1ac99f1a2"
+            complex-validation-scenario:
+              summary: Complex scenario with multiple item issues
+              value:
+                orderLevel:
+                  - code: "CartVersionMismatch"
+                    message: "Cart version 2 expected, but current version is 3. Cart was modified after checkout initiated."
+                lineItemLevel:
+                  - code: "ItemUnavailable"
+                    message: "Product 'Vintage Reserve Cabernet 2018' is no longer available for purchase."
+                    lineItemId: "c12f4dc9-ec1a-4d63-b96f-9ab1ac99f1a3"
+                  - code: "ItemOutOfStock"
+                    message: "Only 5 units of 'Premium Chardonnay 2020' are available, but 8 were requested."
+                    lineItemId: "d45f4dc9-ec1a-4d63-b96f-9ab1ac99f1a4"
+                  - code: "QuantityExceedsLimit"
+                    message: "Maximum 6 units per order allowed for 'Limited Edition Port 2010', but 10 were requested."
+                    lineItemId: "e67f4dc9-ec1a-4d63-b96f-9ab1ac99f1a5"
+    InternalError:
+      $ref: "https://api.swaggerhub.com/apis/Direct_Wines/CommonModelDefinitionSuite/1.0.0#/components/responses/InternalError"
+    TooManyRequestsError:
+      description: |-
+        ## TooManyRequests Errors
+
+        A 429 is returned when too many requests received by Checkout API beyond acceptable threshold.
+
+x-amazon-apigateway-request-validators:
+  request-body-only:
+    validateRequestBody: true
+    validateRequestParameters: false
+  params-only:
+    validateRequestBody: false
+    validateRequestParameters: true
+  full:
+    validateRequestBody: true
+    validateRequestParameters: true
+x-amazon-apigateway-request-validator: full
+x-amazon-apigateway-gateway-responses:
+  BAD_REQUEST_BODY:
+    statusCode: "400"
+    responseParameters:
+      gatewayresponse.header.x-dw-correlation-id: "method.request.header.x-dw-correlation-id"
+      gatewayresponse.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+    responseTemplates:
+      application/json: "{\n \"errors\" : [ \n { \n \"code\" : \"BadRequest\", \n \"message\" : \"$context.error.validationErrorString\", \n \"type\":  \"$context.error.responseType\", \n \"id\": \"Please check the correlation id in the response header\" } \n ], \n   \"statusCode\": 400,\n\"message\" : \"$context.error.message\"}"
+  BAD_REQUEST_PARAMETERS:
+    statusCode: "400"
+    responseParameters:
+      gatewayresponse.header.x-dw-correlation-id: "method.request.header.x-dw-correlation-id"
+      gatewayresponse.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+    responseTemplates:
+      application/json: "{\n \"errors\" : [ \n { \n \"code\" : \"BadRequest\", \n \"message\" : \"$context.error.message\", \n \"type\":  \"$context.error.responseType\", \n \"id\": \"Please check the correlation id in the response header\" } \n ], \n   \"statusCode\": 400,\n \"message\" : \"$context.error.message\" \n}"
+  UNAUTHORIZED:
+    statusCode: "401"
+    responseParameters:
+      gatewayresponse.header.x-dw-correlation-id: "method.request.header.x-dw-correlation-id"
+      gatewayresponse.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+    responseTemplates:
+      application/json: "{\n \"errors\" : [ \n { \n \"code\" : \"Unauthorised\", \n \"message\" : \"The user is not authorised to access this resource\", \n \"type\":  \"Forbidden\", \n \"id\": \"Please check the correlation id in the response header\" \n } \n ], \n   \"statusCode\": 401,\n \"message\" : \"The user is not authorised to access this resource\" \n}"
+  ACCESS_DENIED:
+    statusCode: "403"
+    responseParameters:
+      gatewayresponse.header.x-dw-correlation-id: "method.request.header.x-dw-correlation-id"
+      gatewayresponse.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+    responseTemplates:
+      application/json: "{\n \"errors\" : [ \n { \n \"code\" : \"InsufficientPermissions\", \n \"message\" : \"The user has no permissions to access this resource\", \n \"type\":  \"Forbidden\", \n \"id\": \"Please check the correlation id in the response header\" \n } \n ], \n   \"statusCode\": 403,\n \"message\" : \"The user has no permissions to access this resource\" \n}"
+  UNSUPPORTED_MEDIA_TYPE:
+    statusCode: "415"
+    responseParameters:
+      gatewayresponse.header.x-dw-correlation-id: "method.request.header.x-dw-correlation-id"
+      gatewayresponse.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+    responseTemplates:
+      application/json: "{\n \"errors\" : [ \n { \n \"code\" : \" UnsupportedContent\", \n \"message\" : \"The content header sent is not supported\", \n \"type\":  \"Application Error\", \n \"id\": \"Please check the correlation id in the response header\" \n } \n ], \n   \"statusCode\": 415,\n \"message\" : \"The content header sent is not supported\" \n}"
+  DEFAULT_4XX:
+    statusCode: "404"
+    responseParameters:
+      gatewayresponse.header.x-dw-correlation-id: "method.request.header.x-dw-correlation-id"
+      gatewayresponse.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+    responseTemplates:
+      application/json: "{\n \"errors\" : [ \n { \n \"code\" : \"NotFound\", \n \"message\" : \"Invalid Path requested\", \n \"type\":  \"NOT_FOUND\", \n \"id\": \"Please check the correlation id in the response header\" \n } \n ], \n   \"statusCode\": 404,\n \"message\" : \"Invalid Path requested\" \n}"
