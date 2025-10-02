@@ -14,9 +14,9 @@ const packageJson = require("../package.json");
  */
 const CONFIG = {
   organization: "Direct_Wines",
-  apiName: "cart-api",
+  apiName: "checkout-api",
   visibility: "public",
-  schemaPath: "../apis/carts/cdk/lib/apigateway/openapi-spec/carts-openapi-unresolved.yaml",
+  schemaPath: "../openapi/checkout-openapi-unresolved.yaml",
 };
 
 /**

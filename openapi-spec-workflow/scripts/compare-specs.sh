@@ -18,13 +18,14 @@ NC='\033[0m' # No Color
 OASDIFF_VERSION="1.11.7"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-SPEC_DIR="$PROJECT_ROOT/apis/carts/cdk/lib/apigateway/openapi-spec"
+SPEC_DIR="$PROJECT_ROOT/openapi"
 OUTPUT_DIR="$SCRIPT_DIR/../output"
 OASDIFF_BINARY="$SCRIPT_DIR/oasdiff"
 
 # File paths
-SOURCE_SPEC="$SPEC_DIR/carts-openapi.yaml"
-DESTINATION_SPEC="$SPEC_DIR/carts-openapi-1.4.2.yaml"
+SOURCE_SPEC="$SPEC_DIR/checkout-openapi.yaml"
+# Destination can be a historical/versioned file; change the filename as needed
+DESTINATION_SPEC="$SPEC_DIR/checkout-openapi-1.4.2.yaml"
 
 # Output files
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")

@@ -14,9 +14,10 @@ const packageJson = require("../package.json");
  */
 const CONFIG = {
   organization: "Direct_Wines",
-  apiName: "cart-api",
-  resolvedSchemaPath: "../apis/carts/cdk/lib/apigateway/openapi-spec/carts-openapi.yaml",
-  resolvedSchemaDir: "../apis/carts/cdk/lib/apigateway/openapi-spec",
+  apiName: "checkout-api",
+  // Local paths updated to reference checkout OpenAPI files in this repository
+  resolvedSchemaPath: "../openapi/checkout-openapi.yaml",
+  resolvedSchemaDir: "../openapi",
 };
 
 /**
@@ -143,11 +144,11 @@ function getOutputPath(version, options) {
   const isSpecificVersion = options.version && options.version !== currentVersion;
 
   if (isSpecificVersion) {
-    // Use versioned filename for specific versions: carts-openapi-1.4.2.yaml
-    const versionedFilename = `carts-openapi-${version}.yaml`;
+    // Use versioned filename for specific versions: checkout-openapi-1.4.2.yaml
+    const versionedFilename = `checkout-openapi-${version}.yaml`;
     return path.join(__dirname, "..", CONFIG.resolvedSchemaDir, versionedFilename);
   } else {
-    // Use default filename for current version: carts-openapi.yaml
+    // Use default filename for current version: checkout-openapi.yaml
     return path.join(__dirname, "..", CONFIG.resolvedSchemaPath);
   }
 }
@@ -161,7 +162,7 @@ function downloadResolvedSpec(version, options) {
 
   const currentVersion = packageJson.version;
   const isSpecificVersion = options.version && options.version !== currentVersion;
-  const targetFile = isSpecificVersion ? `carts-openapi-${version}.yaml` : "carts-openapi.yaml";
+  const targetFile = isSpecificVersion ? `checkout-openapi-${version}.yaml` : "checkout-openapi.yaml";
 
   log(`📥 Downloading resolved specification from SwaggerHub...`, "blue");
   log(`   Source: ${swaggerhubPath}`, "blue");

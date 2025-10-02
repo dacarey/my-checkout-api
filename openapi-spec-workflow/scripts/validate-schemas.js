@@ -8,8 +8,8 @@ const OpenAPISchemaValidator = require("@seriousme/openapi-schema-validator");
  * Configuration
  */
 const CONFIG = {
-  // Default directory to scan for OpenAPI schema files
-  defaultSchemasDir: path.join(__dirname, "..", "..", "apis", "carts", "cdk", "lib", "apigateway", "openapi-spec"),
+  // Default directory to scan for OpenAPI schema files (checkout API in this repo)
+  defaultSchemasDir: path.join(__dirname, "..", "..", "openapi"),
 };
 
 /**
