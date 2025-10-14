@@ -8,7 +8,7 @@ info:
     name: "Direct Wines Proprietary"
     url: "https://www.directwines.com"
     x-notice: "This specification and all related materials are the exclusive property of Direct Wines and may not be used, copied, or distributed without explicit permission."
-  version: 0.3.0
+  version: 0.4.0
   description: |
     This is the API specification for the Digital Commerce Checkout API. It provides operations for:
     - Order capture with tokenised payment methods (credit cards, Apple Pay, Google Pay)
