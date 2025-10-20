@@ -87,3 +87,5 @@ Thumbs.db
 
 #file:output
 openapi-spec-workflow/output/lambda/dist/
+openapi-spec-workflow/output/spec-diff-*
+lambda/dist/
