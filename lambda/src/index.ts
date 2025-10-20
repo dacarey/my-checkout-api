@@ -1,7 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 
 // ========================================
-// Type Definitions from OpenAPI Spec
+// Type Definitions Aligned with Payment API v0.2.0
 // ========================================
 
 interface Money {
@@ -9,24 +9,69 @@ interface Money {
   currencyCode: string;
 }
 
-interface Address {
-  firstName: string;
-  lastName: string;
+/**
+ * ISO 19160-compliant address structure from Payment API v0.2.0
+ */
+interface PaymentAddress {
   address1: string;
-  city: string;
+  address2?: string;
+  locality: string;  // ISO 19160 term for city
+  administrativeArea?: string;  // State/province
   postalCode: string;
-  country: string;
-  email: string;
-  phone?: string;
+  country: string;  // ISO 3166-1 alpha-2
 }
 
+/**
+ * Billing contact information with nested address from Payment API v0.2.0
+ */
+interface BillingDetails {
+  firstName: string;
+  lastName: string;
+  email?: string;
+  phone?: string;
+  address: PaymentAddress;
+}
+
+/**
+ * 3DS Setup phase data
+ */
+interface ThreeDSSetupData {
+  referenceId: string;
+  authenticationInformation?: Record<string, any>;
+}
+
+/**
+ * 3DS Completion phase data
+ */
+interface ThreeDSCompletionData {
+  authenticationResult: 'Y' | 'N' | 'A' | 'U' | 'R';
+  cavv?: string;
+  eci?: string;
+  xid?: string;
+  paSpecificationVersion?: string;
+  directoryServerTransactionId?: string;
+  acsOperatorID?: string;
+}
+
+/**
+ * Phase-based 3DS data structure from Payment API v0.2.0
+ */
+interface ThreeDSData {
+  phase: 'setup' | 'completion';
+  setup?: ThreeDSSetupData;
+  completion?: ThreeDSCompletionData;
+}
+
+/**
+ * Tokenised payment details aligned with Payment API v0.2.0
+ */
 interface TokenisedPaymentDetails {
   merchantId: string;
   paymentToken: string;
-  tokenType: 'TRANSIENT' | 'STORED';
+  tokenType: 'transient' | 'stored' | 'TRANSIENT' | 'STORED';  // Support both during alpha
   setupRecurring?: boolean;
-  billTo: Address;
-  threeDSData?: Record<string, any>;
+  billTo: BillingDetails;  // NEW: nested structure
+  threeDSData?: ThreeDSData;  // NEW: structured
 }
 
 interface GiftVoucherPaymentDetails {
@@ -50,7 +95,6 @@ interface CheckoutDraft {
   cartId: string;
   version: number;
   payments: Payment[];
-  billingAddress?: Address;
 }
 
 interface TokenisedPaymentResult {
@@ -134,40 +178,127 @@ function getCurrentTimestamp(): string {
   return new Date().toISOString();
 }
 
+// ========================================
+// Structure Detection and Normalization
+// ========================================
+
+/**
+ * Detects which address structure is being used
+ * Alpha-phase helper to support both old and new formats
+ */
+function detectAddressFormat(billTo: any): 'v0.4-nested' | 'v0.3-flat' | 'unknown' {
+  if (billTo.address && billTo.address.locality) {
+    return 'v0.4-nested';  // New Payment API aligned format
+  } else if (billTo.city) {
+    return 'v0.3-flat';  // Old flat format
+  }
+  return 'unknown';
+}
+
+/**
+ * Extracts customer email from either old or new billTo structure
+ * Demonstrates how to handle both formats gracefully
+ */
+function extractCustomerEmail(billTo: any): string | undefined {
+  const format = detectAddressFormat(billTo);
+
+  if (format === 'v0.4-nested') {
+    // New format: email is at billTo.email
+    return billTo.email;
+  } else if (format === 'v0.3-flat') {
+    // Old format: email is at billTo.email (same location!)
+    return billTo.email;
+  }
+  return undefined;
+}
+
+/**
+ * Extracts locality/city from either format
+ * Demonstrates field name mapping
+ */
+function extractLocality(billTo: any): string | undefined {
+  const format = detectAddressFormat(billTo);
+
+  if (format === 'v0.4-nested') {
+    // New format: nested address.locality
+    return billTo.address?.locality;
+  } else if (format === 'v0.3-flat') {
+    // Old format: flat billTo.city
+    return billTo.city;
+  }
+  return undefined;
+}
+
+/**
+ * Normalizes tokenType to lowercase for internal processing
+ * Accepts both uppercase (old) and lowercase (new) formats
+ */
+function normalizeTokenType(tokenType: string): 'transient' | 'stored' {
+  return tokenType.toLowerCase() as 'transient' | 'stored';
+}
+
+/**
+ * Checks if 3DS data is provided and structured correctly
+ */
+function hasStructuredThreeDSData(threeDSData: any): boolean {
+  return threeDSData &&
+         typeof threeDSData === 'object' &&
+         'phase' in threeDSData &&
+         (threeDSData.phase === 'setup' || threeDSData.phase === 'completion');
+}
+
 function createMockOrder(request: CheckoutDraft): Order {
   const timestamp = getCurrentTimestamp();
   const orderId = generateOrderId();
 
-  // Check if this should be a 3DS scenario (e.g., if amount > 150)
+  // Check if this should be a 3DS scenario
   const totalAmount = request.payments.reduce((sum, p) => sum + p.amount.amount, 0);
-  const requires3DS = totalAmount > 150;
+
+  // NEW: Also check if structured 3DS data is present (indicates 3DS flow)
+  const firstTokenisedPayment = request.payments.find(p => p.type === 'tokenised');
+  const hasThreeDSSetup = firstTokenisedPayment?.tokenisedPayment?.threeDSData &&
+                          hasStructuredThreeDSData(firstTokenisedPayment.tokenisedPayment.threeDSData);
+
+  const requires3DS = totalAmount > 150 || hasThreeDSSetup;
+
+  console.log('3DS Detection:', {
+    totalAmount,
+    hasThreeDSSetup,
+    requires3DS,
+    threeDSPhase: firstTokenisedPayment?.tokenisedPayment?.threeDSData?.phase
+  });
 
   // Build payment details based on request
   const paymentDetails: OrderPaymentDetail[] = request.payments.map(payment => {
     if (payment.type === 'tokenised') {
       if (requires3DS) {
-        return {
-          type: 'tokenised',
-          amount: payment.amount,
-          status: 'requires_3ds',
-          tokenisedPaymentResult: {
-            transactionId: generateTransactionId('auth'),
-            threeDSUrl: 'https://3ds.psp.com/challenge/abc123',
-            merchantReference: payment.tokenisedPayment?.merchantId || 'YOUR_MID'
-          }
-        };
-      } else {
-        return {
-          type: 'tokenised',
-          amount: payment.amount,
-          status: 'completed',
-          tokenisedPaymentResult: {
-            transactionId: generateTransactionId('auth'),
-            authorisationCode: Math.floor(Math.random() * 900000 + 100000).toString(),
-            merchantReference: payment.tokenisedPayment?.merchantId || 'YOUR_MID'
-          }
-        };
+        // If 3DS setup data is provided with phase 'setup', return 3DS challenge required
+        if (hasThreeDSSetup && firstTokenisedPayment?.tokenisedPayment?.threeDSData?.phase === 'setup') {
+          console.log('Returning 3DS challenge required for setup phase');
+          return {
+            type: 'tokenised',
+            amount: payment.amount,
+            status: 'requires_3ds',
+            tokenisedPaymentResult: {
+              transactionId: generateTransactionId('auth'),
+              threeDSUrl: 'https://3ds.psp.com/challenge/abc123',
+              merchantReference: payment.tokenisedPayment?.merchantId || 'YOUR_MID'
+            }
+          };
+        }
       }
+
+      // Default: completed payment
+      return {
+        type: 'tokenised',
+        amount: payment.amount,
+        status: 'completed',
+        tokenisedPaymentResult: {
+          transactionId: generateTransactionId('auth'),
+          authorisationCode: Math.floor(Math.random() * 900000 + 100000).toString(),
+          merchantReference: payment.tokenisedPayment?.merchantId || 'YOUR_MID'
+        }
+      };
     } else {
       // stored payment (gift voucher)
       return {
@@ -294,6 +425,38 @@ function handleCaptureOrder(event: APIGatewayProxyEvent, brandkey?: string): API
         headers: getCorsHeaders(),
         body: JSON.stringify(error)
       };
+    }
+
+    // NEW: Log request structure for debugging
+    const firstTokenisedPayment = request.payments.find(p => p.type === 'tokenised');
+    if (firstTokenisedPayment?.tokenisedPayment) {
+      const billTo = firstTokenisedPayment.tokenisedPayment.billTo;
+      const format = detectAddressFormat(billTo);
+
+      console.log('Request structure detected:', {
+        addressFormat: format,
+        tokenType: firstTokenisedPayment.tokenisedPayment.tokenType,
+        hasStructuredThreeDS: hasStructuredThreeDSData(firstTokenisedPayment.tokenisedPayment.threeDSData),
+        locality: extractLocality(billTo),
+        email: extractCustomerEmail(billTo)
+      });
+
+      // Validation: Warn if using old format (in alpha, still accept it)
+      if (format === 'v0.3-flat') {
+        console.warn('ALPHA WARNING: Client using deprecated flat address structure. Expected nested BillingDetails format.');
+      }
+
+      // Validation: Warn if using uppercase token type
+      if (firstTokenisedPayment.tokenisedPayment.tokenType === 'TRANSIENT' ||
+          firstTokenisedPayment.tokenisedPayment.tokenType === 'STORED') {
+        console.warn('ALPHA WARNING: Client using uppercase tokenType. Expected lowercase: transient, stored');
+      }
+
+      // Validation: Warn if 3DS data is unstructured
+      if (firstTokenisedPayment.tokenisedPayment.threeDSData &&
+          !hasStructuredThreeDSData(firstTokenisedPayment.tokenisedPayment.threeDSData)) {
+        console.warn('ALPHA WARNING: Client using unstructured threeDSData. Expected phase-based structure.');
+      }
     }
 
     // Check for version mismatch scenario (if version is 999, trigger validation error)

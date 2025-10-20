@@ -86,4 +86,4 @@ ehthumbs.db
 Thumbs.db
 
 #file:output
-openapi-spec-workflow/output/
+openapi-spec-workflow/output/lambda/dist/
