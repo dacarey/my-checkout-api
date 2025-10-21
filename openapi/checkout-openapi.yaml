@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Digital Commerce - Checkout API
-  description: "This is the API specification for the Digital Commerce Checkout API. It provides operations for:\n- Order capture with tokenised payment methods (credit cards, Apple Pay, Google Pay)\n- Order capture with stored payment methods (gift vouchers)\n- Cart validation and order creation\n- 3DS authentication flow support\n\n---\n# Endpoint Types:\n\nThe Checkout API includes two types of endpoints, each suited to different use cases:\n\n## 1. **Me API Endpoints:**\n  - *Purpose:* Designed for personalised customer experiences on websites.\n  - *Signature:* Includes `/me` in the URL.\n  - *Example:* `POST /me/token/capture` (Captures order for the authenticated user).\n  - *Access:* Requires an access token that identifies the specific user, including brand, market, and customer_nbr claims.\n  - *Use Case:* Ideal for checkout processes on e-commerce sites where customers manage their own orders.\n\n## 2. **Stateless API Endpoints (Per-Brand):**\n  - *Purpose:* Used for broader applications, such as call centres or backend services, where actions are performed on behalf of multiple customers.\n  - *Signature:* Includes `/in-brand/{brandkey}` in the URL.\n  - *Example:* `POST /in-brand/{brandkey}/token/capture` (Captures order within the specified brand).\n  - *Access:* Requires a higher authority token and is scoped per brand, identified by the `brandkey` path parameter.\n  - *Use Case:* Suitable for customer service representatives managing orders across different brands or for backend services handling multi-customer operations.\n\n---\n# Authorisation:\n\n## Getting Access Tokens\nAll Checkout API endpoints require OAuth 2.0 access tokens for authorisation:\n\n- **For RESTful API Access:** Contact the Curity OAuth Identity Server team for credentials and token endpoint details.\n\n## Token Requirements\n\n- **For `/me` Endpoints:**\n  - Guest users: Token must contain an anonymous identity claim\n  - Registered users: Token must contain a customer identity claim\n  \n- **For `/in-brand/{brandkey}` Endpoints:**\n  - Requires a service account token with appropriate scopes for the specified brand\n\n---\n# Concurrency Control:\n\nOrder capture is immutable: orders are created once and always have `version: 1`. Concurrency control today applies only to the cart you are checking out (via its `version` in the request, returning 409 if stale). A future Amendments API may allow post-checkout changes; then the order `version` will increment and be required for optimistic concurrency. Store it now; use `Idempotency-Key` (not `version`) for safe retries of the same capture request.\n\n---\n# AWS API Gateway Base Path Mapping:\n\n**Important:** AWS API Gateway automatically prefixes `/checkout` to all endpoint paths through its base path mapping feature. This means:\n- The paths defined in this specification (e.g., `/me/token/capture`) will be accessible as `/checkout/me/token/capture`\n- No manual `/checkout` prefix is needed in the OpenAPI specification paths\n\n---\n# Order Capture Process:\n\nThe Order Capture process involves two main steps:\n\n## 1. Business Validations\n- **Cart validation**: Item availability, delivery restrictions, cart state\n- **Amount matching**: Ensuring payment amounts match cart totals\n- **Customer validation**: Delivery address, customer status\n\n## 2. Payment Processing\n- **Tokenised payments**: Credit cards, Apple Pay, Google Pay (via existing Payments API)\n- **Stored payments**: Gift vouchers and other stored payment methods\n- **3DS handling**: Support for 3D Secure authentication flows\n\n## Order Object Design\n\nThe `Order` object is designed as an intuitive extension of the familiar `Cart` object:\n- **All Cart fields preserved**: lineItems, totalPrice, shippingInformation, etc.\n- **Added order status**: COMPLETED, FAILED, REQUIRES_3DS_VALIDATION\n- **Added payment details**: Shows exactly how the order was paid\n- **Same Money objects**: Consistent monetary formatting with Cart API\n\nThis approach makes orders immediately understandable - they're \"just carts that have been paid for\" with clear payment information.\n\n## Delivery Address Handling\n\n**Important:** Delivery address information must be configured within the Cart object before checkout. The Checkout API does not accept delivery address overrides.\n\n**Process Flow:**\n1. **Cart Setup**: Delivery address must be set on the cart using the Cart API\n2. **Address Validation**: Cart validates delivery restrictions and shipping options\n3. **Checkout**: Checkout API uses the delivery address from the cart\n4. **Order Creation**: Final order inherits all cart delivery information\n\nFor delivery address management, see the Cart API documentation.\n\n---\n# Checkout Validation Handling Guide\n\n## Understanding Checkout Validations\n\nThe Checkout API performs comprehensive business validations during order capture to ensure data integrity and business rule compliance. When validation issues occur, a `422 Business Validation Error` response is returned with detailed validation information.\n\n### Validation Categories\n\n**Order-Level Validations:** Issues affecting the entire checkout process\n- Cart state problems (not found, version mismatch, empty/locked)\n- Payment issues (amount mismatch, insufficient funds, declined)\n- Delivery restrictions\n\n**Line Item-Level Validations:** Issues with specific products\n- Stock availability (out of stock, insufficient quantity)\n- Product availability (discontinued, not saleable)\n- Compliance restrictions (regulatory, shipping limitations)\n- Quantity limits (exceeds maximum per order)\n\n### Client Implementation Guidelines\n\n**1. Process All Validations**\n```json\n{\n  \"orderLevel\": [\n    {\"code\": \"PaymentAmountMismatch\", \"message\": \"...\"}\n  ],\n  \"lineItemLevel\": [\n    {\"code\": \"ItemOutOfStock\", \"message\": \"...\", \"lineItemId\": \"abc123\"}\n  ]\n}\n```\n\n**2. Use Validation Codes for Localization**\n- **Recommended**: Use the `code` field to implement localized user messages\n- **Not Recommended**: Display the English `message` field directly to users\n- The `message` field is intended for developers and debugging\n\n**3. Present Issues by Category**\n- Group order-level issues as general checkout problems\n- Group line item-level issues by the affected products\n- Use `lineItemId` to map validations back to cart line items\n\n**4. Require Resolution Before Retry**\n- All validation issues must be resolved before resubmitting\n- Order is NOT created when validation errors occur\n- Users must take corrective action (adjust quantities, change address, etc.)\n\n### Common Integration Patterns\n\n**Handle Multiple Issues:**\n```javascript\nif (response.status === 422) {\n  const validations = response.data;\n\n  // Process order-level issues\n  validations.orderLevel.forEach(validation => {\n    displayOrderError(validation.code, validation.message);\n  });\n\n  // Process line item issues\n  validations.lineItemLevel.forEach(validation => {\n    displayLineItemError(validation.lineItemId, validation.code, validation.message);\n  });\n}\n```\n\n**Localization Example:**\n```javascript\nfunction getLocalizedMessage(validationCode) {\n  const messages = {\n    'ItemOutOfStock': t('checkout.errors.item_out_of_stock'),\n    'PaymentAmountMismatch': t('checkout.errors.payment_mismatch'),\n    // ... other codes\n  };\n  return messages[validationCode] || t('checkout.errors.generic');\n}\n```\n"
+  description: "This is the API specification for the Digital Commerce Checkout API. It provides operations for:\n- Order capture with tokenised payment methods (credit cards, Apple Pay, Google Pay)\n- Order capture with stored payment methods (gift vouchers)\n- Cart validation and order creation\n- 3DS authentication flow support\n\n**Payment API Integration**: This API is aligned with Payment API v0.2.0 for payment\nprocessing schemas, ensuring consistency in address structures (ISO 19160), 3DS flows,\nand payment token handling.\n\n---\n# Endpoint Types:\n\nThe Checkout API includes two types of endpoints, each suited to different use cases:\n\n## 1. **Me API Endpoints:**\n  - *Purpose:* Designed for personalised customer experiences on websites.\n  - *Signature:* Includes `/me` in the URL.\n  - *Example:* `POST /me/token/capture` (Captures order for the authenticated user).\n  - *Access:* Requires an access token that identifies the specific user, including brand, market, and customer_nbr claims.\n  - *Use Case:* Ideal for checkout processes on e-commerce sites where customers manage their own orders.\n\n## 2. **Stateless API Endpoints (Per-Brand):**\n  - *Purpose:* Used for broader applications, such as call centres or backend services, where actions are performed on behalf of multiple customers.\n  - *Signature:* Includes `/in-brand/{brandkey}` in the URL.\n  - *Example:* `POST /in-brand/{brandkey}/token/capture` (Captures order within the specified brand).\n  - *Access:* Requires a higher authority token and is scoped per brand, identified by the `brandkey` path parameter.\n  - *Use Case:* Suitable for customer service representatives managing orders across different brands or for backend services handling multi-customer operations.\n\n---\n# Authorisation:\n\n## Getting Access Tokens\nAll Checkout API endpoints require OAuth 2.0 access tokens for authorisation:\n\n- **For RESTful API Access:** Contact the Curity OAuth Identity Server team for credentials and token endpoint details.\n\n## Token Requirements\n\n- **For `/me` Endpoints:**\n  - Guest users: Token must contain an anonymous identity claim\n  - Registered users: Token must contain a customer identity claim\n  \n- **For `/in-brand/{brandkey}` Endpoints:**\n  - Requires a service account token with appropriate scopes for the specified brand\n\n---\n# Concurrency Control:\n\nOrder capture is immutable: orders are created once and always have `version: 1`. Concurrency control today applies only to the cart you are checking out (via its `version` in the request, returning 409 if stale). A future Amendments API may allow post-checkout changes; then the order `version` will increment and be required for optimistic concurrency. Store it now; use `Idempotency-Key` (not `version`) for safe retries of the same capture request.\n\n---\n# AWS API Gateway Base Path Mapping:\n\n**Important:** AWS API Gateway automatically prefixes `/checkout` to all endpoint paths through its base path mapping feature. This means:\n- The paths defined in this specification (e.g., `/me/token/capture`) will be accessible as `/checkout/me/token/capture`\n- No manual `/checkout` prefix is needed in the OpenAPI specification paths\n\n---\n# Order Capture Process:\n\nThe Order Capture process involves two main steps:\n\n## 1. Business Validations\n- **Cart validation**: Item availability, delivery restrictions, cart state\n- **Amount matching**: Ensuring payment amounts match cart totals\n- **Customer validation**: Delivery address, customer status\n\n## 2. Payment Processing\n- **Tokenised payments**: Credit cards, Apple Pay, Google Pay (via existing Payments API)\n- **Stored payments**: Gift vouchers and other stored payment methods\n- **3DS handling**: Support for 3D Secure authentication flows\n\n## Order Object Design\n\nThe `Order` object is designed as an intuitive extension of the familiar `Cart` object:\n- **All Cart fields preserved**: lineItems, totalPrice, shippingInformation, etc.\n- **Added order status**: COMPLETED (orders only exist when payment succeeds)\n- **Added payment details**: Shows exactly how the order was paid\n- **Same Money objects**: Consistent monetary formatting with Cart API\n\nThis approach makes orders immediately understandable - they're \"just carts that have been paid for\" with clear payment information.\n\n## Delivery Address Handling\n\n**Important:** Delivery address information must be configured within the Cart object before checkout. The Checkout API does not accept delivery address overrides.\n\n**Process Flow:**\n1. **Cart Setup**: Delivery address must be set on the cart using the Cart API\n2. **Address Validation**: Cart validates delivery restrictions and shipping options\n3. **Checkout**: Checkout API uses the delivery address from the cart\n4. **Order Creation**: Final order inherits all cart delivery information\n\nFor delivery address management, see the Cart API documentation.\n\n---\n# REST-Compliant Status Codes\n\nThis API follows REST best practices for HTTP status codes, which differs from some payment industry conventions:\n\n## Our Approach\n- **201 Created**: Used when an order is successfully created and payment is captured. The response includes a `Location` header pointing to the new order resource.\n- **202 Accepted**: Used when 3D Secure authentication is required. The request has been accepted but requires further customer action. No order exists yet.\n- **422 Unprocessable Entity**: Used for business validation failures. No order is created.\n\n## Industry Context\nMany payment providers (e.g., Stripe, Adyen) use HTTP 200 for all successful API calls, relying on response body fields to indicate actual transaction status. We've chosen a more REST-compliant approach where HTTP status codes directly reflect the operation outcome:\n- Resource created → 201\n- Further action required → 202\n- Validation failed → 422\n\nThis makes our API more self-documenting and easier to integrate, as developers can rely on standard HTTP semantics.\n\n---\n# Checkout Validation Handling Guide\n\n## Understanding Checkout Validations\n\nThe Checkout API performs comprehensive business validations during order capture to ensure data integrity and business rule compliance. When validation issues occur, a `422 Business Validation Error` response is returned with detailed validation information.\n\n### Validation Categories\n\n**Order-Level Validations:** Issues affecting the entire checkout process\n- Cart state problems (not found, version mismatch, empty/locked)\n- Payment issues (amount mismatch, insufficient funds, declined)\n- Delivery restrictions\n\n**Line Item-Level Validations:** Issues with specific products\n- Stock availability (out of stock, insufficient quantity)\n- Product availability (discontinued, not saleable)\n- Compliance restrictions (regulatory, shipping limitations)\n- Quantity limits (exceeds maximum per order)\n\n### Client Implementation Guidelines\n\n**1. Process All Validations**\n```json\n{\n  \"orderLevel\": [\n    {\"code\": \"PaymentAmountMismatch\", \"message\": \"...\"}\n  ],\n  \"lineItemLevel\": [\n    {\"code\": \"ItemOutOfStock\", \"message\": \"...\", \"lineItemId\": \"abc123\"}\n  ]\n}\n```\n\n**2. Use Validation Codes for Localization**\n- **Recommended**: Use the `code` field to implement localized user messages\n- **Not Recommended**: Display the English `message` field directly to users\n- The `message` field is intended for developers and debugging\n\n**3. Present Issues by Category**\n- Group order-level issues as general checkout problems\n- Group line item-level issues by the affected products\n- Use `lineItemId` to map validations back to cart line items\n\n**4. Require Resolution Before Retry**\n- All validation issues must be resolved before resubmitting\n- Order is NOT created when validation errors occur\n- Users must take corrective action (adjust quantities, change address, etc.)\n\n### Common Integration Patterns\n\n**Handle Multiple Issues:**\n```javascript\nif (response.status === 422) {\n  const validations = response.data;\n\n  // Process order-level issues\n  validations.orderLevel.forEach(validation => {\n    displayOrderError(validation.code, validation.message);\n  });\n\n  // Process line item issues\n  validations.lineItemLevel.forEach(validation => {\n    displayLineItemError(validation.lineItemId, validation.code, validation.message);\n  });\n}\n```\n\n**Localization Example:**\n```javascript\nfunction getLocalizedMessage(validationCode) {\n  const messages = {\n    'ItemOutOfStock': t('checkout.errors.item_out_of_stock'),\n    'PaymentAmountMismatch': t('checkout.errors.payment_mismatch'),\n    // ... other codes\n  };\n  return messages[validationCode] || t('checkout.errors.generic');\n}\n```\n"
   contact:
     name: Direct Wines API Support
     email: apisupport@directwines.com
@@ -9,7 +9,7 @@ info:
     name: Direct Wines Proprietary
     url: https://www.directwines.com
     x-notice: "This specification and all related materials are the exclusive property of Direct Wines and may not be used, copied, or distributed without explicit permission."
-  version: 0.3.0
+  version: 0.4.0
 servers:
 - url: https://virtserver.swaggerhub.com/Direct_Wines/checkout-api/0.3.0
   description: SwaggerHub API Auto Mocking
@@ -42,13 +42,18 @@ paths:
         2. **Payment Processing**: Processes tokenised and/or stored payment methods
         3. **Order Creation**: Creates order with payment details, status, and delivery information from cart
 
+        **Response Codes:**
+        - **201 Created**: Order successfully created, payment captured
+        - **202 Accepted**: 3DS authentication required, order pending customer action
+        - **422 Unprocessable Entity**: Business validation failed, no order created
+
         **Payment Methods Supported:**
         - **Tokenised**: Credit cards, Apple Pay, Google Pay (via Payments API)
         - **Stored**: Gift vouchers and other stored payment methods
         - **Multiple**: Can combine multiple payment methods (e.g., gift voucher + credit card)
 
         **3DS Support:**
-        - If 3DS authentication is required, returns status `REQUIRES_3DS_VALIDATION`
+        - If 3DS authentication is required, returns HTTP 202 with authentication details
         - Provides 3DS challenge URL for customer completion
         - Use Payments API `/3ds/validate-capture` endpoint to complete after 3DS
 
@@ -86,17 +91,17 @@ paths:
                       amount: 49.99
                       currencyCode: GBP
                     tokenisedPayment:
-                      merchantId: YOUR_MID
                       paymentToken: tkn_abc123xyz
-                      tokenType: TRANSIENT
+                      tokenType: transient
                       billTo:
                         firstName: John
                         lastName: Doe
-                        address1: 123 Main Street
-                        city: London
-                        postalCode: SW1A 1AA
-                        country: GB
                         email: customer@example.com
+                        address:
+                          address1: 123 Main Street
+                          locality: London
+                          postalCode: SW1A 1AA
+                          country: GB
               mixed-payment-methods:
                 summary: Gift voucher + credit card payment
                 value:
@@ -117,21 +122,27 @@ paths:
                       amount: 29.99
                       currencyCode: GBP
                     tokenisedPayment:
-                      merchantId: YOUR_MID
                       paymentToken: tkn_xyz789def
-                      tokenType: TRANSIENT
+                      tokenType: transient
                       billTo:
                         firstName: Jane
                         lastName: Smith
-                        address1: 456 High Street
-                        city: Manchester
-                        postalCode: M1 1AA
-                        country: GB
                         email: jane.smith@example.com
+                        address:
+                          address1: 456 High Street
+                          locality: Manchester
+                          postalCode: M1 1AA
+                          country: GB
         required: true
       responses:
-        "200":
-          description: Order captured successfully
+        "201":
+          description: Order successfully created and payment captured
+          headers:
+            Location:
+              description: URL of the created order resource
+              schema:
+                type: string
+                example: /orders/order-3169811e-fa0a-789
           content:
             application/json:
               schema:
@@ -205,34 +216,38 @@ paths:
                         merchantReference: YOUR_MID
                     createdAt: 2025-04-22T17:30:00Z
                     lastModifiedAt: 2025-04-22T17:30:00Z
+        "202":
+          description: 3D Secure authentication required - order pending customer action
+          headers:
+            Location:
+              description: URL of the authentication session
+              schema:
+                type: string
+                example: /authentication-sessions/auth-3169811e-fa0a-321
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreeDSAuthenticationRequired"
+              examples:
                 requires-3ds-validation:
-                  summary: Order requires 3DS authentication
+                  summary: 3DS authentication required
                   value:
-                    id: order-3169811e-fa0a-321
-                    version: 1
-                    status: REQUIRES_3DS_VALIDATION
-                    totalLineItems: 1
-                    totalItemQuantity: 1
-                    numberOfBottles: 6
-                    totalListPrice:
-                      amount: 180.0
-                      currencyCode: EUR
-                    totalPrice:
-                      amount: 159.99
-                      currencyCode: EUR
-                    customerId: c1e2d3f4-5a6b-7c8d-9e0f-1a2b3c4d5e6f
-                    paymentDetails:
-                    - type: tokenised
+                    authenticationId: auth-3169811e-fa0a-321
+                    cartId: 3169811e-fa0a-789
+                    threeDSUrl: https://3ds.psp.com/challenge/abc123
+                    transactionId: "7507655240516609704808"
+                    merchantReference: YOUR_MID
+                    paymentContext:
                       amount:
                         amount: 159.99
                         currencyCode: EUR
-                      status: requires_3ds
-                      tokenisedPaymentResult:
-                        transactionId: "7507655240516609704808"
-                        threeDSUrl: https://3ds.psp.com/challenge/abc123
-                        merchantReference: YOUR_MID
-                    createdAt: 2025-04-22T17:30:00Z
-                    lastModifiedAt: 2025-04-22T17:30:00Z
+                      paymentMethod: tokenised
+                    nextAction:
+                      type: redirect_to_url
+                      redirectToUrl:
+                        url: https://3ds.psp.com/challenge/abc123
+                        method: POST
+                        returnUrl: https://merchant.example.com/checkout/3ds-return
         "400":
           $ref: "#/components/responses/StructureError"
         "401":
@@ -318,7 +333,7 @@ paths:
       tags:
       - Stateless Checkout API
       summary: Capture order within specified brand
-      description: "Captures an order from a cart within the specified brand. This operation is intended\nfor authenticated agents acting on behalf of customers, such as call center \nrepresentatives or backend services.\n\n**Process Flow:**\n1. **Brand Validation**: Verifies brandkey and agent permissions\n2. **Cart Validation**: Verifies cart state, item availability, delivery restrictions (using cart's delivery address)\n3. **Payment Processing**: Processes tokenised and/or stored payment methods\n4. **Order Creation**: Creates order with payment details, status, and delivery information from cart\n\n**Payment Methods Supported:**\n- **Tokenised**: Credit cards, Apple Pay, Google Pay (via Payments API)\n- **Stored**: Gift vouchers and other stored payment methods\n- **Multiple**: Can combine multiple payment methods (e.g., gift voucher + credit card)\n\n**3DS Support:**\n- If 3DS authentication is required, returns status `REQUIRES_3DS_VALIDATION`\n- Provides 3DS challenge URL for customer completion\n- Use Payments API `/in-brand/{brandkey}/3ds/validate-capture` endpoint to complete after 3DS\n\n**Address Handling:**\n- **Delivery Address**: Must be configured on the cart before checkout (no override supported)\n- **Billing Address**: Optional override for payment processing; defaults to delivery address if not provided\n- Cart API should be used to set and validate delivery address before checkout\n\n**Example usage:**\n\n`POST /checkout/in-brand/uklait/token/capture`\n"
+      description: "Captures an order from a cart within the specified brand. This operation is intended\nfor authenticated agents acting on behalf of customers, such as call center \nrepresentatives or backend services.\n\n**Process Flow:**\n1. **Brand Validation**: Verifies brandkey and agent permissions\n2. **Cart Validation**: Verifies cart state, item availability, delivery restrictions (using cart's delivery address)\n3. **Payment Processing**: Processes tokenised and/or stored payment methods\n4. **Order Creation**: Creates order with payment details, status, and delivery information from cart\n\n**Response Codes:**\n- **201 Created**: Order successfully created, payment captured\n- **202 Accepted**: 3DS authentication required, order pending customer action\n- **422 Unprocessable Entity**: Business validation failed, no order created\n\n**Payment Methods Supported:**\n- **Tokenised**: Credit cards, Apple Pay, Google Pay (via Payments API)\n- **Stored**: Gift vouchers and other stored payment methods\n- **Multiple**: Can combine multiple payment methods (e.g., gift voucher + credit card)\n\n**3DS Support:**\n- If 3DS authentication is required, returns HTTP 202 with authentication details\n- Provides 3DS challenge URL for customer completion\n- Use Payments API `/in-brand/{brandkey}/3ds/validate-capture` endpoint to complete after 3DS\n\n**Address Handling:**\n- **Delivery Address**: Must be configured on the cart before checkout (no override supported)\n- **Billing Address**: Optional override for payment processing; defaults to delivery address if not provided\n- Cart API should be used to set and validate delivery address before checkout\n\n**Example usage:**\n\n`POST /checkout/in-brand/uklait/token/capture`\n"
       operationId: captureOrderInBrand
       parameters:
       - name: brandkey
@@ -359,17 +374,17 @@ paths:
                       amount: 89.99
                       currencyCode: GBP
                     tokenisedPayment:
-                      merchantId: YOUR_MID
                       paymentToken: tkn_callcenter123
-                      tokenType: TRANSIENT
+                      tokenType: transient
                       billTo:
                         firstName: Mary
                         lastName: Customer
-                        address1: 456 Customer Street
-                        city: Edinburgh
-                        postalCode: EH1 1AA
-                        country: GB
                         email: mary.customer@example.com
+                        address:
+                          address1: 456 Customer Street
+                          locality: Edinburgh
+                          postalCode: EH1 1AA
+                          country: GB
               mixed-payment-methods:
                 summary: Gift voucher + credit card payment via agent
                 value:
@@ -390,17 +405,17 @@ paths:
                       amount: 39.99
                       currencyCode: GBP
                     tokenisedPayment:
-                      merchantId: YOUR_MID
                       paymentToken: tkn_agent456
-                      tokenType: TRANSIENT
+                      tokenType: transient
                       billTo:
                         firstName: David
                         lastName: Client
-                        address1: 789 Client Road
-                        city: Glasgow
-                        postalCode: G1 1AA
-                        country: GB
                         email: david.client@example.com
+                        address:
+                          address1: 789 Client Road
+                          locality: Glasgow
+                          postalCode: G1 1AA
+                          country: GB
               backend-service-payment:
                 summary: Automated backend service payment
                 value:
@@ -412,25 +427,43 @@ paths:
                       amount: 125.0
                       currencyCode: EUR
                     tokenisedPayment:
-                      merchantId: YOUR_MID
                       paymentToken: tkn_backend789
-                      tokenType: STORED
+                      tokenType: stored
                       billTo:
                         firstName: Service
                         lastName: Account
-                        address1: 999 Service Ave
-                        city: Dublin
-                        postalCode: D01 1AA
-                        country: IE
                         email: service@example.com
+                        address:
+                          address1: 999 Service Ave
+                          locality: Dublin
+                          postalCode: D01 1AA
+                          country: IE
         required: true
       responses:
-        "200":
-          description: Order captured successfully
+        "201":
+          description: Order successfully created and payment captured
+          headers:
+            Location:
+              description: URL of the created order resource
+              schema:
+                type: string
+                example: /orders/order-3169811e-fa0a-456
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Order"
+        "202":
+          description: 3D Secure authentication required - order pending customer action
+          headers:
+            Location:
+              description: URL of the authentication session
+              schema:
+                type: string
+                example: /authentication-sessions/auth-3169811e-fa0a-456
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreeDSAuthenticationRequired"
         "400":
           $ref: "#/components/responses/StructureError"
         "401":
@@ -528,43 +561,52 @@ paths:
         type: NONE
 components:
   schemas:
-    Address:
+    PaymentBillingDetails:
+      required:
+      - address
+      - firstName
+      - lastName
       type: object
       properties:
         firstName:
           type: string
-          description: First name of the customer.
+          description: Customer's first name.
           example: John
         lastName:
           type: string
-          description: Last name of the customer.
+          description: Customer's last name.
           example: Doe
-        address1:
-          type: string
-          description: Primary street address (address line 1).
-          example: 123 Main Street
-        city:
-          type: string
-          description: City or locality.
-          example: London
-        postalCode:
-          type: string
-          description: Postal or ZIP code.
-          example: SW1A 1AA
-        country:
-          pattern: "^[A-Z]{2}$"
-          type: string
-          description: Two-letter ISO country code.
-          example: GB
         email:
           type: string
-          description: Customer email address.
+          description: Customer email address (required if phone not provided).
           format: email
           example: customer@example.com
         phone:
           type: string
-          description: Customer phone number.
+          description: Customer phone number (required if email not provided).
           example: "+44123456789"
+        address:
+          $ref: "#/components/schemas/Address"
+      description: |
+        Contact information for an addressable party (billing, shipping, etc.) with nested ISO 19160-compliant address.
+        At least one contact method (email or phone) must be provided.
+
+        The `address` property: Nested address following ISO 19160 standard.
+    PaymentThreeDSData:
+      type: object
+      properties:
+        phase:
+          type: string
+          description: "Phase indicator - use \"setup\" for /token/capture, \"completion\" for /3ds/validate-capture."
+          example: setup
+          enum:
+          - setup
+          - completion
+        setup:
+          $ref: "#/components/schemas/ThreeDSSetupData"
+        completion:
+          $ref: "#/components/schemas/ThreeDSCompletionData"
+      description: "3DS authentication data using phase-based structure. Use phase \"setup\" with populated setup object for /token/capture endpoints. \nUse phase \"completion\" with populated completion object for /3ds/validate-capture endpoints. Only populate the object \ncorresponding to the specified phase."
     CheckoutDraft:
       required:
       - cartId
@@ -580,7 +622,9 @@ components:
           example: 3169811e-fa0a-789
         version:
           type: integer
-          description: "Expected version of the Cart to checkout. If the expected version does not \nmatch the actual version, a 409 Conflict is returned.\n"
+          description: |
+            Expected version of the Cart to checkout. If the expected version does not
+            match the actual version, a 409 Conflict is returned.
           format: int32
           example: 1
         payments:
@@ -592,14 +636,12 @@ components:
             (e.g., partial gift voucher + credit card).
           items:
             $ref: "#/components/schemas/Payment"
-        billingAddress:
-          $ref: "#/components/schemas/Address"
       description: |
         A CheckoutDraft represents the data required to capture an order from a cart.
-        This includes cart identification, payment methods, and optional address overrides.
+        This includes cart identification, payment methods with billing details.
 
-        **Billing Address**: The optional `billingAddress` field provides a billing address override.
-        If not provided, the system uses the delivery address or customer profile address.
+        **Billing Address**: Billing address information is provided within each payment method
+        (e.g., tokenisedPayment.billTo) aligned with Payment API v0.2.0 structure.
     Payment:
       required:
       - amount
@@ -636,41 +678,45 @@ components:
     TokenisedPaymentDetails:
       required:
       - billTo
-      - merchantId
       - paymentToken
       - tokenType
       type: object
       properties:
-        merchantId:
-          type: string
-          description: Unique merchant identifier assigned by the PSP.
-          example: YOUR_MID
         paymentToken:
           type: string
           description: Payment token for processing.
           example: tkn_abc123xyz
         tokenType:
           type: string
-          description: "Token type ('TRANSIENT' for single-use, 'STORED' for saved tokens)."
-          example: TRANSIENT
+          description: "Token type ('transient' for single-use, 'stored' for saved tokens)."
+          example: transient
           enum:
-          - TRANSIENT
-          - STORED
+          - transient
+          - stored
         setupRecurring:
           type: boolean
           description: Flag indicating if payment should set up a subscription for future recurring charges (only valid with transient tokens).
           example: false
         billTo:
-          $ref: "#/components/schemas/Address"
+          $ref: "#/components/schemas/PaymentBillingDetails"
         threeDSData:
-          type: object
-          additionalProperties: true
-          description: 3DS authentication data from Payments API setup.
+          $ref: "#/components/schemas/PaymentThreeDSData"
       description: |
-        Tokenised payment details. This is a subset of the TokenAuthoriseRequest
-        from the Payments API, containing the essential fields needed for checkout.
+        Tokenised payment details aligned with Payment API v0.2.0 TokenAuthoriseRequest.
+        This schema contains the essential fields needed for checkout payment processing.
 
-        **Bill To**: Billing address information.
+        **Alignment with Payment API**: This schema is a subset of the Payment API's
+        TokenAuthoriseRequest, using the same structure for billTo and threeDSData to
+        ensure seamless integration with payment processing.
+
+        **Merchant Identification**: The merchantId is derived by the payment-sdk based on
+        brand and environment context, and does not need to be provided in the request.
+
+        **Bill To**: Billing contact information with nested ISO 19160-compliant address.
+        Separates person details (name, email, phone) from address structure.
+
+        **3DS Data**: Phase-based 3D Secure authentication data structure.
+        Uses 'phase' discriminator to distinguish setup from completion flows.
     StoredPaymentDetails:
       required:
       - paymentMethod
@@ -778,13 +824,14 @@ components:
           description: |
             Current status of the order:
             - COMPLETED: Order successfully completed and payment captured
-            - FAILED: Order failed due to payment or business validation issues
-            - REQUIRES_3DS_VALIDATION: Order requires 3DS authentication before completion.
+
+            Note: Orders are only created when payment succeeds. Failed payments return 422
+            with validation errors. 3DS authentication requirements return 202 with authentication
+            details. Future statuses may include post-creation states like PROCESSING, SHIPPED,
+            DELIVERED, CANCELLED, or REFUNDED.
           example: COMPLETED
           enum:
           - COMPLETED
-          - FAILED
-          - REQUIRES_3DS_VALIDATION
         paymentDetails:
           type: array
           description: "Array of payment methods used for this order. Shows exactly how the \norder was paid, including amounts and payment status for each method.\n"
@@ -1015,6 +1062,96 @@ components:
               ID of the line item to which this validation applies. This matches the
               line item ID from the original cart.
             example: e64c4dc9-ec1a-4d63-b96f-9ab1ac99f1a1
+    ThreeDSAuthenticationRequired:
+      required:
+      - authenticationId
+      - cartId
+      - nextAction
+      - paymentContext
+      - threeDSUrl
+      - transactionId
+      type: object
+      properties:
+        authenticationId:
+          type: string
+          description: Unique identifier for this 3DS authentication session.
+          example: auth-3169811e-fa0a-321
+        cartId:
+          type: string
+          description: The cart ID being checked out (will become order ID after successful authentication).
+          example: 3169811e-fa0a-789
+        threeDSUrl:
+          type: string
+          description: URL for the 3DS authentication challenge.
+          format: uri
+          example: https://3ds.psp.com/challenge/abc123
+        transactionId:
+          type: string
+          description: Payment processor transaction ID for tracking.
+          example: "7507655240516609704808"
+        merchantReference:
+          type: string
+          description: Merchant reference for the payment.
+          example: YOUR_MID
+        paymentContext:
+          required:
+          - amount
+          - paymentMethod
+          type: object
+          properties:
+            amount:
+              $ref: "#/components/schemas/Money"
+            paymentMethod:
+              type: string
+              description: Type of payment requiring authentication.
+              example: tokenised
+              enum:
+              - tokenised
+          description: Context about the payment requiring authentication.
+        nextAction:
+          required:
+          - redirectToUrl
+          - type
+          type: object
+          properties:
+            type:
+              type: string
+              description: Type of action required.
+              example: redirect_to_url
+              enum:
+              - redirect_to_url
+            redirectToUrl:
+              required:
+              - method
+              - returnUrl
+              - url
+              type: object
+              properties:
+                url:
+                  type: string
+                  description: The URL to redirect the customer to.
+                  format: uri
+                  example: https://3ds.psp.com/challenge/abc123
+                method:
+                  type: string
+                  description: HTTP method to use for the redirect.
+                  example: POST
+                  enum:
+                  - GET
+                  - POST
+                returnUrl:
+                  type: string
+                  description: URL to return to after authentication.
+                  format: uri
+                  example: https://merchant.example.com/checkout/3ds-return
+              description: Redirect details for 3DS authentication.
+          description: Instructions for the next action required (following Stripe's pattern).
+      description: |
+        Response returned when 3D Secure authentication is required before order creation.
+        The customer must complete the authentication challenge before the order can be created.
+
+        Use the `/3ds/validate-capture` endpoint after successful authentication to complete
+        the order creation.
     ErrorMessageResponse:
       type: object
       properties:
@@ -1045,6 +1182,136 @@ components:
           type: string
           description: A random ID that could be used to identify the error message in the logs
           example: 7c2e2694-aefe-43d7-888e-6a99514caaca
+    AddressableParty:
+      required:
+      - address
+      - firstName
+      - lastName
+      type: object
+      properties:
+        firstName:
+          type: string
+          description: Customer's first name.
+          example: John
+        lastName:
+          type: string
+          description: Customer's last name.
+          example: Doe
+        email:
+          type: string
+          description: Customer email address (required if phone not provided).
+          format: email
+          example: customer@example.com
+        phone:
+          type: string
+          description: Customer phone number (required if email not provided).
+          example: "+44123456789"
+        address:
+          $ref: "#/components/schemas/Address"
+      description: |
+        Contact information for an addressable party (billing, shipping, etc.) with nested ISO 19160-compliant address.
+        At least one contact method (email or phone) must be provided.
+
+        The `address` property: Nested address following ISO 19160 standard.
+    Address:
+      required:
+      - address1
+      - country
+      - locality
+      - postalCode
+      type: object
+      properties:
+        address1:
+          type: string
+          description: Primary street address line.
+          example: 123 Main Street
+        address2:
+          type: string
+          description: Secondary address line (optional).
+          example: Apartment 4B
+        locality:
+          type: string
+          description: City or locality (ISO 19160 terminology).
+          example: London
+        administrativeArea:
+          type: string
+          description: "State, province, or administrative region."
+          example: Greater London
+        postalCode:
+          type: string
+          description: Postal or ZIP code.
+          example: SW1A 1AA
+        country:
+          pattern: "^[A-Z]{2}$"
+          type: string
+          description: Two-letter ISO country code.
+          example: GB
+      description: ISO 19160-compliant address structure.
+    ThreeDSData:
+      type: object
+      properties:
+        phase:
+          type: string
+          description: "Phase indicator - use \"setup\" for /token/capture, \"completion\" for /3ds/validate-capture."
+          example: setup
+          enum:
+          - setup
+          - completion
+        setup:
+          $ref: "#/components/schemas/ThreeDSSetupData"
+        completion:
+          $ref: "#/components/schemas/ThreeDSCompletionData"
+      description: "3DS authentication data using phase-based structure. Use phase \"setup\" with populated setup object for /token/capture endpoints. \nUse phase \"completion\" with populated completion object for /3ds/validate-capture endpoints. Only populate the object \ncorresponding to the specified phase."
+    ThreeDSSetupData:
+      type: object
+      properties:
+        referenceId:
+          type: string
+          description: 3DS reference ID from authentication setup.
+          example: ref_3ds_12345678
+        authenticationInformation:
+          type: object
+          additionalProperties: true
+          description: Authentication setup details from paymentAuthenticationSetup.
+      description: Setup phase data - populate this object when phase="setup" for /token/capture endpoints.
+    ThreeDSCompletionData:
+      type: object
+      properties:
+        authenticationResult:
+          type: string
+          description: 3DS authentication result from challenge.
+          example: "Y"
+          enum:
+          - "Y"
+          - "N"
+          - A
+          - U
+          - R
+        cavv:
+          type: string
+          description: Cardholder Authentication Verification Value.
+          example: AAABCZIhcQAAAABZlyFxAAAAAAA=
+        eci:
+          type: string
+          description: Electronic Commerce Indicator.
+          example: "05"
+        xid:
+          type: string
+          description: Transaction identifier for 3DS protocol.
+          example: MEQxMDEwNjE1MTEwOTA2NzI=
+        paSpecificationVersion:
+          type: string
+          description: 3DS protocol version used for authentication.
+          example: 2.1.0
+        directoryServerTransactionId:
+          type: string
+          description: Directory Server Transaction ID from 3DS2 protocol.
+          example: 8558c931-277b-4240-adfc-443cbd61a2c0
+        acsOperatorID:
+          type: string
+          description: ACS Operator ID identifying the Access Control Server.
+          example: ACS-OP-12345
+      description: Completion phase data - populate this object when phase="completion" for /3ds/validate-capture endpoints.
     Money:
       type: object
       properties:
