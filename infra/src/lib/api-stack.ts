@@ -46,6 +46,12 @@ export class ApiStack extends Stack {
     openApiSpec = openApiSpec.replace(/\$\{ServiceAccountID\}/g, serviceAccountId);
     openApiSpec = openApiSpec.replace(/\$\{Environment\}/g, props.config.environment);
 
+    // Replace CIDM-related variables for GlobalAuthorizer
+    // In single-account deployments, these use the same account as the API
+    openApiSpec = openApiSpec.replace(/\$\{CIDMAccountID\}/g, props.config.apiAccountId);
+    openApiSpec = openApiSpec.replace(/\$\{ApiAccountID\}/g, props.config.apiAccountId);
+    openApiSpec = openApiSpec.replace(/\$\{CIDMEnvironment\}/g, props.config.environment);
+
     // Optional: Development-only authorizer bypass
     const isDevelopment = props.config.environment === 'dev';
     const bypassAuthorizer = process.env.BYPASS_AUTHORIZER === 'true' && isDevelopment;

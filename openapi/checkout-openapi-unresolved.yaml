@@ -281,7 +281,6 @@ paths:
                         amount: 49.99
                         currencyCode: "GBP"
                       tokenisedPayment:
-                        merchantId: "YOUR_MID"
                         paymentToken: "tkn_abc123xyz"
                         tokenType: "transient"
                         billTo:
@@ -313,7 +312,6 @@ paths:
                         amount: 29.99
                         currencyCode: "GBP"
                       tokenisedPayment:
-                        merchantId: "YOUR_MID"
                         paymentToken: "tkn_xyz789def"
                         tokenType: "transient"
                         billTo:
@@ -595,7 +593,6 @@ paths:
                         amount: 89.99
                         currencyCode: "GBP"
                       tokenisedPayment:
-                        merchantId: "YOUR_MID"
                         paymentToken: "tkn_callcenter123"
                         tokenType: "transient"
                         billTo:
@@ -627,7 +624,6 @@ paths:
                         amount: 39.99
                         currencyCode: "GBP"
                       tokenisedPayment:
-                        merchantId: "YOUR_MID"
                         paymentToken: "tkn_agent456"
                         tokenType: "transient"
                         billTo:
@@ -650,7 +646,6 @@ paths:
                         amount: 125.00
                         currencyCode: "EUR"
                       tokenisedPayment:
-                        merchantId: "YOUR_MID"
                         paymentToken: "tkn_backend789"
                         tokenType: "stored"
                         billTo:
@@ -831,22 +826,10 @@ components:
     # These schemas are defined in the Payment API and referenced here to ensure
     # consistency across payment processing endpoints.
 
-    PaymentAddress:
-      description: |
-        ISO 19160-compliant address structure from Payment API v0.2.0.
-        Uses 'locality' instead of 'city' per international addressing standards.
-      $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.2.0#/components/schemas/Address'
-
     PaymentBillingDetails:
-      description: |
-        Billing contact information with nested ISO 19160 address from Payment API v0.2.0.
-        Separates person details (name, email, phone) from address structure.
-      $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.2.0#/components/schemas/BillingDetails'
+      $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.2.0#/components/schemas/AddressableParty'
 
     PaymentThreeDSData:
-      description: |
-        Phase-based 3D Secure authentication data structure from Payment API v0.2.0.
-        Uses 'phase' discriminator to distinguish setup from completion flows.
       $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.2.0#/components/schemas/ThreeDSData'
 
     # ----------------------------------------
@@ -936,19 +919,19 @@ components:
         TokenAuthoriseRequest, using the same structure for billTo and threeDSData to
         ensure seamless integration with payment processing.
 
+        **Merchant Identification**: The merchantId is derived by the payment-sdk based on
+        brand and environment context, and does not need to be provided in the request.
+
         **Bill To**: Billing contact information with nested ISO 19160-compliant address.
+        Separates person details (name, email, phone) from address structure.
 
         **3DS Data**: Phase-based 3D Secure authentication data structure.
+        Uses 'phase' discriminator to distinguish setup from completion flows.
       required:
-        - merchantId
         - paymentToken
         - tokenType
         - billTo
       properties:
-        merchantId:
-          type: string
-          example: "YOUR_MID"
-          description: Unique merchant identifier assigned by the PSP.
         paymentToken:
           type: string
           example: "tkn_abc123xyz"

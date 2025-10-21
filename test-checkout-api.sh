@@ -42,17 +42,18 @@ echo '{
             "type": "tokenised",
             "amount": {"amount": 49.99, "currencyCode": "GBP"},
             "tokenisedPayment": {
-                "merchantId": "TEST_MID",
                 "paymentToken": "tkn_abc123xyz",
-                "tokenType": "TRANSIENT",
+                "tokenType": "transient",
                 "billTo": {
                     "firstName": "John",
                     "lastName": "Doe",
-                    "address1": "123 Main Street",
-                    "city": "London",
-                    "postalCode": "SW1A 1AA",
-                    "country": "GB",
-                    "email": "john.doe@example.com"
+                    "email": "john.doe@example.com",
+                    "address": {
+                        "address1": "123 Main Street",
+                        "locality": "London",
+                        "postalCode": "SW1A 1AA",
+                        "country": "GB"
+                    }
                 }
             }
         }
@@ -83,17 +84,18 @@ echo '{
             "type": "tokenised",
             "amount": {"amount": 29.99, "currencyCode": "GBP"},
             "tokenisedPayment": {
-                "merchantId": "TEST_MID",
                 "paymentToken": "tkn_xyz789def",
-                "tokenType": "TRANSIENT",
+                "tokenType": "transient",
                 "billTo": {
                     "firstName": "Jane",
                     "lastName": "Smith",
-                    "address1": "456 High Street",
-                    "city": "Manchester",
-                    "postalCode": "M1 1AA",
-                    "country": "GB",
-                    "email": "jane.smith@example.com"
+                    "email": "jane.smith@example.com",
+                    "address": {
+                        "address1": "456 High Street",
+                        "locality": "Manchester",
+                        "postalCode": "M1 1AA",
+                        "country": "GB"
+                    }
                 }
             }
         }
@@ -113,17 +115,18 @@ echo '{
             "type": "tokenised",
             "amount": {"amount": 159.99, "currencyCode": "EUR"},
             "tokenisedPayment": {
-                "merchantId": "TEST_MID",
                 "paymentToken": "tkn_3ds_test",
-                "tokenType": "TRANSIENT",
+                "tokenType": "transient",
                 "billTo": {
                     "firstName": "Michael",
                     "lastName": "Johnson",
-                    "address1": "789 Park Avenue",
-                    "city": "Dublin",
-                    "postalCode": "D02 1AA",
-                    "country": "IE",
-                    "email": "michael.johnson@example.com"
+                    "email": "michael.johnson@example.com",
+                    "address": {
+                        "address1": "789 Park Avenue",
+                        "locality": "Dublin",
+                        "postalCode": "D02 1AA",
+                        "country": "IE"
+                    }
                 }
             }
         }
@@ -143,17 +146,18 @@ echo '{
             "type": "tokenised",
             "amount": {"amount": 89.99, "currencyCode": "GBP"},
             "tokenisedPayment": {
-                "merchantId": "TEST_MID",
                 "paymentToken": "tkn_agent_test",
-                "tokenType": "TRANSIENT",
+                "tokenType": "transient",
                 "billTo": {
                     "firstName": "Sarah",
                     "lastName": "Customer",
-                    "address1": "101 Customer Road",
-                    "city": "Edinburgh",
-                    "postalCode": "EH1 1AA",
-                    "country": "GB",
-                    "email": "sarah.customer@example.com"
+                    "email": "sarah.customer@example.com",
+                    "address": {
+                        "address1": "101 Customer Road",
+                        "locality": "Edinburgh",
+                        "postalCode": "EH1 1AA",
+                        "country": "GB"
+                    }
                 }
             }
         }
@@ -173,17 +177,18 @@ echo '{
             "type": "tokenised",
             "amount": {"amount": 49.99, "currencyCode": "GBP"},
             "tokenisedPayment": {
-                "merchantId": "TEST_MID",
                 "paymentToken": "tkn_test",
-                "tokenType": "TRANSIENT",
+                "tokenType": "transient",
                 "billTo": {
                     "firstName": "Test",
                     "lastName": "User",
-                    "address1": "123 Test Street",
-                    "city": "London",
-                    "postalCode": "SW1A 1AA",
-                    "country": "GB",
-                    "email": "test@example.com"
+                    "email": "test@example.com",
+                    "address": {
+                        "address1": "123 Test Street",
+                        "locality": "London",
+                        "postalCode": "SW1A 1AA",
+                        "country": "GB"
+                    }
                 }
             }
         }
@@ -203,17 +208,18 @@ echo '{
             "type": "tokenised",
             "amount": {"amount": 49.99, "currencyCode": "GBP"},
             "tokenisedPayment": {
-                "merchantId": "TEST_MID",
                 "paymentToken": "tkn_test",
-                "tokenType": "TRANSIENT",
+                "tokenType": "transient",
                 "billTo": {
                     "firstName": "Test",
                     "lastName": "User",
-                    "address1": "123 Test Street",
-                    "city": "London",
-                    "postalCode": "SW1A 1AA",
-                    "country": "GB",
-                    "email": "test@example.com"
+                    "email": "test@example.com",
+                    "address": {
+                        "address1": "123 Test Street",
+                        "locality": "London",
+                        "postalCode": "SW1A 1AA",
+                        "country": "GB"
+                    }
                 }
             }
         }
