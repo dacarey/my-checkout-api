@@ -158,7 +158,7 @@ interface StoredPaymentResult {
 interface OrderPaymentDetail {
   type: 'tokenised' | 'stored';
   amount: Money;
-  status: 'completed' | 'failed' | 'requires_3ds';
+  status: 'authorized' | 'settled';
   tokenisedPaymentResult?: TokenisedPaymentResult;
   storedPaymentResult?: StoredPaymentResult;
 }
@@ -166,7 +166,7 @@ interface OrderPaymentDetail {
 interface Order {
   readonly id: string;
   readonly version: number;
-  readonly status: 'COMPLETED' | 'FAILED';  // 3DS scenarios return 202 with ThreeDSAuthenticationRequired
+  readonly status: 'completed';  // Orders only created on success; failures return 422, 3DS returns 202
   readonly totalLineItems: number;
   readonly totalItemQuantity: number;
   readonly numberOfBottles: number;
@@ -468,13 +468,13 @@ function createCompletedOrder(request: CheckoutDraft): Order {
     throw new Error('Cannot create order: payments array is empty');
   }
 
-  // Build payment details - all completed successfully
+  // Build payment details - all authorized successfully
   const paymentDetails: OrderPaymentDetail[] = request.payments.map(payment => {
     if (payment.type === 'tokenised') {
       return {
         type: 'tokenised',
         amount: payment.amount,
-        status: 'completed',
+        status: 'authorized',
         tokenisedPaymentResult: {
           transactionId: generateTransactionId('auth'),
           authorisationCode: Math.floor(Math.random() * 900000 + 100000).toString(),
@@ -486,7 +486,7 @@ function createCompletedOrder(request: CheckoutDraft): Order {
       return {
         type: 'stored',
         amount: payment.amount,
-        status: 'completed',
+        status: 'authorized',
         storedPaymentResult: {
           paymentMethod: 'giftvoucher',
           transactionId: generateTransactionId('gv'),
@@ -511,7 +511,7 @@ function createCompletedOrder(request: CheckoutDraft): Order {
   return {
     id: orderId,
     version: 1,
-    status: 'COMPLETED',
+    status: 'completed',
     totalLineItems: 2,
     totalItemQuantity: 3,
     numberOfBottles: 36,

@@ -38,7 +38,7 @@ npx cdk deploy LambdaStack --profile "$PROFILE" --require-approval never \
   -c serviceAccountId="$ACCOUNT_ID"
 
 echo "📡 Getting Lambda alias ARN..."
-FUNCTION_NAME="checkout-${ENVIRONMENT}-service-lambda"
+FUNCTION_NAME="dwaws-${ENVIRONMENT}-checkout-order-capture-lambda"
 LAMBDA_ARN=$(aws lambda list-aliases --function-name "$FUNCTION_NAME" --profile "$PROFILE" \
   --query 'Aliases[?Name==`live`].AliasArn' --output text)
 

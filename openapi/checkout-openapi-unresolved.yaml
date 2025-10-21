@@ -87,7 +87,7 @@ info:
 
     The `Order` object is designed as an intuitive extension of the familiar `Cart` object:
     - **All Cart fields preserved**: lineItems, totalPrice, shippingInformation, etc.
-    - **Added order status**: COMPLETED (orders only exist when payment succeeds)
+    - **Added order status**: completed (orders only exist when payment succeeds)
     - **Added payment details**: Shows exactly how the order was paid
     - **Same Money objects**: Consistent monetary formatting with Cart API
 
@@ -342,7 +342,7 @@ paths:
                   value:
                     id: "order-3169811e-fa0a-789"
                     version: 1
-                    status: "COMPLETED"
+                    status: "completed"
                     totalLineItems: 2
                     totalItemQuantity: 3
                     numberOfBottles: 36
@@ -359,7 +359,7 @@ paths:
                         amount:
                           amount: 49.97
                           currencyCode: "GBP"
-                        status: "completed"
+                        status: "authorized"
                         tokenisedPaymentResult:
                           transactionId: "auth_12345678"
                           authorisationCode: "123456"
@@ -371,7 +371,7 @@ paths:
                   value:
                     id: "order-3169811e-fa0a-456"
                     version: 1
-                    status: "COMPLETED"
+                    status: "completed"
                     totalLineItems: 1
                     totalItemQuantity: 2
                     numberOfBottles: 24
@@ -387,7 +387,7 @@ paths:
                         amount:
                           amount: 20.00
                           currencyCode: "GBP"
-                        status: "completed"
+                        status: "authorized"
                         storedPaymentResult:
                           paymentMethod: "giftvoucher"
                           transactionId: "gv_txn_789123"
@@ -398,7 +398,7 @@ paths:
                         amount:
                           amount: 49.98
                           currencyCode: "GBP"
-                        status: "completed"
+                        status: "authorized"
                         tokenisedPaymentResult:
                           transactionId: "auth_87654321"
                           authorisationCode: "654321"
@@ -1073,16 +1073,16 @@ components:
         # NEW: Order-specific fields
         status:
           type: string
-          enum: [COMPLETED]
+          enum: [completed]
           description: |
             Current status of the order:
-            - COMPLETED: Order successfully completed and payment captured
+            - completed: Order successfully completed and payment captured
 
             Note: Orders are only created when payment succeeds. Failed payments return 422
             with validation errors. 3DS authentication requirements return 202 with authentication
-            details. Future statuses may include post-creation states like PROCESSING, SHIPPED,
-            DELIVERED, CANCELLED, or REFUNDED.
-          example: "COMPLETED"
+            details. Future statuses may include post-creation states like processing, shipped,
+            delivered, cancelled, or refunded.
+          example: "completed"
         paymentDetails:
           type: array
           description: |
@@ -1126,13 +1126,16 @@ components:
           $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/cart-order-schemas/0.4.0#/components/schemas/Money'
         status:
           type: string
-          enum: [completed, failed, requires_3ds]
+          enum: [authorized, settled]
           description: |
             Status of this specific payment:
-            - completed: Payment successfully processed
-            - failed: Payment failed or was declined
-            - requires_3ds: Payment requires 3DS authentication.
-          example: "completed"
+            - authorized: Payment successfully authorized by payment processor
+            - settled: Payment has been settled (funds transferred)
+
+            Note: Orders are only created when payments succeed. Payment failures
+            return HTTP 422, and 3DS requirements return HTTP 202 - neither creates
+            an Order. Therefore, only successful payment statuses appear here.
+          example: "authorized"
         tokenisedPaymentResult:
           $ref: "#/components/schemas/TokenisedPaymentResult"
         storedPaymentResult:
