@@ -55,7 +55,29 @@ export class ApiStack extends Stack {
       `arn:aws:apigateway:${region}:lambda:path\\/2015-03-31\\/functions\\/arn:aws:lambda:${region}:${serviceAccountId}:function:${expectedFunctionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/invocations`,
       'g'
     );
+
+    // Count occurrences before replacement
+    const occurrencesBefore = (openApiSpec.match(lambdaArnPattern) || []).length;
+
     openApiSpec = openApiSpec.replace(lambdaArnPattern, lambdaIntegrationUri);
+
+    // Validate replacement occurred
+    if (occurrencesBefore === 0) {
+      throw new Error(
+        `Lambda ARN pattern not found in OpenAPI spec. Expected pattern matching function: ${expectedFunctionName}. ` +
+        `This indicates a mismatch between the function name in lambda-stack.ts and the OpenAPI specification.`
+      );
+    }
+
+    // Validate the result contains the actual Lambda ARN
+    if (!openApiSpec.includes(props.lambdaLiveAliasArn)) {
+      throw new Error(
+        `Lambda alias ARN ${props.lambdaLiveAliasArn} was not successfully substituted into OpenAPI spec. ` +
+        `Deployment would fail with invalid Lambda integration.`
+      );
+    }
+
+    console.log(`✅ Replaced ${occurrencesBefore} Lambda ARN reference(s) in OpenAPI spec`);
 
     // Optional: Development-only authorizer bypass
     const isDevelopment = props.config.environment === 'dev';

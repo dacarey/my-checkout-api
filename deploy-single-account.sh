@@ -39,8 +39,28 @@ npx cdk deploy LambdaStack --profile "$PROFILE" --require-approval never \
 
 echo "📡 Getting Lambda alias ARN..."
 FUNCTION_NAME="dwaws-${ENVIRONMENT}-checkout-order-capture-lambda"
-LAMBDA_ARN=$(aws lambda list-aliases --function-name "$FUNCTION_NAME" --profile "$PROFILE" \
-  --query 'Aliases[?Name==`live`].AliasArn' --output text)
+
+# Execute AWS CLI command and check exit code
+if ! LAMBDA_ARN=$(aws lambda list-aliases --function-name "$FUNCTION_NAME" --profile "$PROFILE" \
+  --query 'Aliases[?Name==`live`].AliasArn' --output text 2>&1); then
+  echo "❌ ERROR: Failed to retrieve Lambda alias ARN"
+  echo "AWS CLI output: $LAMBDA_ARN"
+  echo "Verify that Lambda function '$FUNCTION_NAME' exists and you have permissions to access it"
+  exit 1
+fi
+
+# Validate the ARN is not empty
+if [ -z "$LAMBDA_ARN" ]; then
+  echo "❌ ERROR: Lambda 'live' alias not found"
+  echo "Function name: $FUNCTION_NAME"
+  echo "Verify that:"
+  echo "  1. Lambda function exists (run LambdaStack deployment first)"
+  echo "  2. 'live' alias exists on the function"
+  echo "  3. You have permissions to list aliases"
+  exit 1
+fi
+
+echo "✅ Found Lambda alias ARN: $LAMBDA_ARN"
 
 echo "🌐 Deploying API Stack..."
 npx cdk deploy ApiStack --profile "$PROFILE" --require-approval never \

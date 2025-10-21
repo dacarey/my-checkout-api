@@ -1156,7 +1156,10 @@ components:
         threeDSUrl:
           type: string
           format: uri
-          description: 3DS challenge URL (if status is requires_3ds).
+          description: |
+            3DS challenge URL. Note: This field only appears in HTTP 202 responses
+            (ThreeDSAuthenticationRequired), NOT in Order objects. Orders are only
+            created after successful payment authorization.
           example: "https://3ds.psp.com/challenge/abc123"
         merchantReference:
           type: string

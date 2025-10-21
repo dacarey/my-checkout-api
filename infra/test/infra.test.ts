@@ -23,7 +23,7 @@ describe('LambdaStack', () => {
     // Assert Lambda function exists with Node.js 22 runtime
     template.hasResourceProperties('AWS::Lambda::Function', {
       Runtime: 'nodejs22.x',
-      FunctionName: 'checkout-test-service-lambda'
+      FunctionName: 'dwaws-test-checkout-order-capture-lambda'
     });
 
     // Assert Lambda alias exists
@@ -68,7 +68,7 @@ describe('ApiStack', () => {
       stageName: 'test'
     };
 
-    const lambdaArn = 'arn:aws:lambda:eu-west-1:123456789012:function:checkout-test-service-lambda:live';
+    const lambdaArn = 'arn:aws:lambda:eu-west-1:123456789012:function:dwaws-test-checkout-order-capture-lambda:live';
 
     const stack = new ApiStack(app, 'TestApiStack', {
       config,
