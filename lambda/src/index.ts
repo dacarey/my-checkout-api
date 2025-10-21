@@ -443,9 +443,14 @@ function create3DSAuthenticationResponse(request: CheckoutDraft, payment: Paymen
     transactionId,
     paymentContext: {
       amount: payment.amount,
-      merchantId: payment.tokenisedPayment?.merchantId || 'YOUR_MID'
+      paymentMethod: 'tokenised'
     },
-    nextAction: 'complete_3ds_authentication'
+    nextAction: 'redirect_to_url',
+    redirectToUrl: {
+      url: 'https://3ds.psp.com/challenge/abc123',
+      method: 'POST',
+      returnUrl: 'https://merchant.example.com/checkout/3ds-return'
+    }
   };
 }
 
@@ -473,7 +478,7 @@ function createCompletedOrder(request: CheckoutDraft): Order {
         tokenisedPaymentResult: {
           transactionId: generateTransactionId('auth'),
           authorisationCode: Math.floor(Math.random() * 900000 + 100000).toString(),
-          merchantReference: payment.tokenisedPayment?.merchantId || 'YOUR_MID'
+          merchantReference: 'YOUR_MID'  // Mock value - real implementation would use actual merchant config
         }
       };
     } else {

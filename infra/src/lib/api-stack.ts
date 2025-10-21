@@ -12,6 +12,26 @@ export interface ApiStackProps extends StackProps {
   config: ServiceConfig;
 }
 
+/**
+ * Replaces all template variables in a string using a variable mapping.
+ * Uses global regex replacement to handle multiple occurrences.
+ */
+function replaceTemplateVariables(content: string, variableMap: Record<string, string>): string {
+  let result = content;
+  for (const [variable, value] of Object.entries(variableMap)) {
+    const pattern = new RegExp(escapeRegExp(variable), 'g');
+    result = result.replace(pattern, value);
+  }
+  return result;
+}
+
+/**
+ * Escapes special regex characters in a string.
+ */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export class ApiStack extends Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, {
@@ -35,22 +55,18 @@ export class ApiStack extends Stack {
     // Lambda ARN format: arn:aws:lambda:region:account-id:function:function-name:alias
     const serviceAccountId = props.lambdaLiveAliasArn.split(':')[4];
 
-    // Replace template variables in OpenAPI spec
-    // First replace the entire integration URI pattern with our live alias ARN
-    const uriPattern = /arn:aws:apigateway:\$\{AWSRegion\}:lambda:path\/2015-03-31\/functions\/arn:aws:lambda:\$\{AWSRegion\}:\$\{ServiceAccountID\}:function:dwaws-\$\{Environment\}-checkout-order-capture-lambda\/invocations/g;
-    openApiSpec = openApiSpec.replace(uriPattern, lambdaIntegrationUri);
+    // Replace template variables in OpenAPI spec using centralized mapping
+    const variableMap: Record<string, string> = {
+      '${LambdaIntegrationUri}': lambdaIntegrationUri,
+      '${AWSRegion}': props.config.region,
+      '${ServiceAccountID}': serviceAccountId,
+      '${Environment}': props.config.environment,
+      '${CIDMAccountID}': props.config.apiAccountId,
+      '${ApiAccountID}': props.config.apiAccountId,
+      '${CIDMEnvironment}': props.config.environment
+    };
 
-    // Then replace any remaining standalone variables
-    openApiSpec = openApiSpec.replace(/\$\{LambdaIntegrationUri\}/g, lambdaIntegrationUri);
-    openApiSpec = openApiSpec.replace(/\$\{AWSRegion\}/g, props.config.region);
-    openApiSpec = openApiSpec.replace(/\$\{ServiceAccountID\}/g, serviceAccountId);
-    openApiSpec = openApiSpec.replace(/\$\{Environment\}/g, props.config.environment);
-
-    // Replace CIDM-related variables for GlobalAuthorizer
-    // In single-account deployments, these use the same account as the API
-    openApiSpec = openApiSpec.replace(/\$\{CIDMAccountID\}/g, props.config.apiAccountId);
-    openApiSpec = openApiSpec.replace(/\$\{ApiAccountID\}/g, props.config.apiAccountId);
-    openApiSpec = openApiSpec.replace(/\$\{CIDMEnvironment\}/g, props.config.environment);
+    openApiSpec = replaceTemplateVariables(openApiSpec, variableMap);
 
     // Optional: Development-only authorizer bypass
     const isDevelopment = props.config.environment === 'dev';
