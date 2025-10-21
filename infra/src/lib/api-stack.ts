@@ -12,26 +12,6 @@ export interface ApiStackProps extends StackProps {
   config: ServiceConfig;
 }
 
-/**
- * Replaces all template variables in a string using a variable mapping.
- * Uses global regex replacement to handle multiple occurrences.
- */
-function replaceTemplateVariables(content: string, variableMap: Record<string, string>): string {
-  let result = content;
-  for (const [variable, value] of Object.entries(variableMap)) {
-    const pattern = new RegExp(escapeRegExp(variable), 'g');
-    result = result.replace(pattern, value);
-  }
-  return result;
-}
-
-/**
- * Escapes special regex characters in a string.
- */
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 export class ApiStack extends Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, {
@@ -48,25 +28,56 @@ export class ApiStack extends Stack {
     const openApiSpecPath = path.join(__dirname, '../../../openapi/checkout-openapi.yaml');
     let openApiSpec = fs.readFileSync(openApiSpecPath, 'utf8');
 
-    // Replace Lambda integration URI with actual ARN
-    const lambdaIntegrationUri = `arn:aws:apigateway:${props.config.region}:lambda:path/2015-03-31/functions/${props.lambdaLiveAliasArn}/invocations`;
-
     // Extract ServiceAccountID from the Lambda ARN
     // Lambda ARN format: arn:aws:lambda:region:account-id:function:function-name:alias
     const serviceAccountId = props.lambdaLiveAliasArn.split(':')[4];
 
-    // Replace template variables in OpenAPI spec using centralized mapping
-    const variableMap: Record<string, string> = {
-      '${LambdaIntegrationUri}': lambdaIntegrationUri,
-      '${AWSRegion}': props.config.region,
-      '${ServiceAccountID}': serviceAccountId,
-      '${Environment}': props.config.environment,
-      '${CIDMAccountID}': props.config.apiAccountId,
-      '${ApiAccountID}': props.config.apiAccountId,
-      '${CIDMEnvironment}': props.config.environment
-    };
+    // Use configuration values for substitution (Direct Wines standard pattern)
+    const region = props.config.region;
+    const environment = props.config.environment;
+    const apiAccountId = props.config.apiAccountId;
 
-    openApiSpec = replaceTemplateVariables(openApiSpec, variableMap);
+    // First, replace variable placeholders so we can match the function name pattern
+    openApiSpec = openApiSpec.replace(/\$\{AWSRegion\}/g, region);
+    openApiSpec = openApiSpec.replace(/\$\{ServiceAccountID\}/g, serviceAccountId);
+    openApiSpec = openApiSpec.replace(/\$\{Environment\}/g, environment);
+    openApiSpec = openApiSpec.replace(/\$\{ApiAccountID\}/g, apiAccountId);
+    openApiSpec = openApiSpec.replace(/\$\{CIDMAccountID\}/g, apiAccountId);
+    openApiSpec = openApiSpec.replace(/\$\{CIDMEnvironment\}/g, environment);
+
+    // Now replace the Lambda ARN template with the actual alias ARN
+    // This follows the Direct Wines standard pattern from Payments API
+    const lambdaIntegrationUri = `arn:aws:apigateway:${region}:lambda:path/2015-03-31/functions/${props.lambdaLiveAliasArn}/invocations`;
+
+    // Replace all Lambda integration URIs (now that variables are resolved)
+    const expectedFunctionName = `dwaws-${environment}-checkout-order-capture-lambda`;
+    const lambdaArnPattern = new RegExp(
+      `arn:aws:apigateway:${region}:lambda:path\\/2015-03-31\\/functions\\/arn:aws:lambda:${region}:${serviceAccountId}:function:${expectedFunctionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/invocations`,
+      'g'
+    );
+
+    // Count occurrences before replacement
+    const occurrencesBefore = (openApiSpec.match(lambdaArnPattern) || []).length;
+
+    openApiSpec = openApiSpec.replace(lambdaArnPattern, lambdaIntegrationUri);
+
+    // Validate replacement occurred
+    if (occurrencesBefore === 0) {
+      throw new Error(
+        `Lambda ARN pattern not found in OpenAPI spec. Expected pattern matching function: ${expectedFunctionName}. ` +
+        `This indicates a mismatch between the function name in lambda-stack.ts and the OpenAPI specification.`
+      );
+    }
+
+    // Validate the result contains the actual Lambda ARN
+    if (!openApiSpec.includes(props.lambdaLiveAliasArn)) {
+      throw new Error(
+        `Lambda alias ARN ${props.lambdaLiveAliasArn} was not successfully substituted into OpenAPI spec. ` +
+        `Deployment would fail with invalid Lambda integration.`
+      );
+    }
+
+    console.log(`✅ Replaced ${occurrencesBefore} Lambda ARN reference(s) in OpenAPI spec`);
 
     // Optional: Development-only authorizer bypass
     const isDevelopment = props.config.environment === 'dev';

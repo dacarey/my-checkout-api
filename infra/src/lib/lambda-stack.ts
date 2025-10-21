@@ -20,8 +20,8 @@ export class LambdaStack extends Stack {
       env: { account: props.config.serviceAccountId, region: props.config.region }
     });
 
-    // Generate function name based on configuration
-    const functionName = `${props.config.functionNamePrefix}-${props.config.environment}-service-lambda`;
+    // Generate function name to match OpenAPI spec naming convention
+    const functionName = `dwaws-${props.config.environment}-checkout-order-capture-lambda`;
 
     // Create log group with explicit retention policy
     const logGroup = new logs.LogGroup(this, 'ServiceLambdaLogGroup', {
