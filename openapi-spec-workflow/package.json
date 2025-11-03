@@ -1,6 +1,6 @@
 {
   "name": "my-checkout-api-openapi-spec-workflow",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "OpenAPI Specification Workflow for My Checkout API",
   "scripts": {
     "validate": "npm run validate:spectral && npm run validate:schemas",
