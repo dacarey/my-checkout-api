@@ -1,6 +1,6 @@
 {
   "name": "my-checkout-api",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Multi-account serverless checkout API using AWS CDK with TypeScript",
   "engines": {
     "node": ">=22.0.0"
