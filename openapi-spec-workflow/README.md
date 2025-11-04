@@ -67,17 +67,19 @@ See [OpenAPI-Specification-Workflow.md](./OpenAPI-Specification-Workflow.md) for
 ## Directory Structure
 
 ```
+```
 openapi-spec-workflow/
 ├── package.json                    # OpenAPI workflow dependencies
 ├── scripts/                        # All workflow automation
 │   ├── validate-schemas.js
-│   ├── version-bump.js
+│   ├── sync-openapi-version.js
 │   ├── publish.js
 │   ├── sync-dev.js
 │   └── compare-specs.sh           # OpenAPI specification comparison
 ├── output/                         # Generated comparison reports
 ├── .spectral.yaml                  # API linting configuration
 ├── OpenAPI-Specification-Workflow.md  # Complete documentation
+```
 └── README.md                       # This file
 ```
 

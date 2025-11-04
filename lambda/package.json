@@ -1,6 +1,6 @@
 {
   "name": "checkout-lambda",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "description": "Lambda function for checkout API",
   "main": "src/index.ts",
   "scripts": {
@@ -8,7 +8,7 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.156",
-    "@types/node": "^22.0.0",
-    "typescript": "^5.6.0"
+    "@types/node": "^22.18.8",
+    "typescript": "~5.6.3"
   }
 }

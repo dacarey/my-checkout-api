@@ -118,6 +118,41 @@ Key environment variables:
 - Use feature branches: `feature/`, `bugfix/`, `hotfix/`, `chore/`
 - All changes via pull requests
 
+### Version Bumping
+
+The project supports independent versioning for the OpenAPI specification and implementation code.
+
+**Bump OpenAPI specification only:**
+```bash
+npm run version:openapi patch    # Bug fix to API spec
+npm run version:openapi minor    # New API endpoint/feature
+npm run version:openapi major    # Breaking API change
+```
+
+**Bump implementation code only (excludes OpenAPI spec):**
+```bash
+npm run version:impl patch       # Bug fix in code (root/lambda/infra)
+npm run version:impl minor       # New implementation feature
+npm run version:impl major       # Breaking code change
+```
+
+**Bump everything (all workspaces + OpenAPI spec):**
+```bash
+npm run version:all patch        # Bug fixes across entire project
+npm run version:all minor        # New features across project
+npm run version:all major        # Breaking changes across project
+```
+
+**How it works:**
+- `version:openapi` bumps only `openapi-spec-workflow/package.json` + OpenAPI schema
+- `version:impl` bumps root + lambda + infra (excludes openapi-spec-workflow)
+- `version:all` bumps root + lambda + infra + openapi-spec-workflow + OpenAPI schema
+- The OpenAPI spec version can diverge from package.json versions
+- When bumping, the same bump type (patch/minor/major) is applied to each from their current versions
+- Example: package.json `0.5.0 → 0.5.1` (patch) and OpenAPI spec `2.1.5 → 2.1.6` (patch)
+
+For detailed usage, flags, and versioning strategy, see [Version Bump Guide](docs/VERSION-BUMP-GUIDE.md).
+
 ## Documentation
 
 See [CLAUDE.md](CLAUDE.md) for detailed architecture and development guide.
