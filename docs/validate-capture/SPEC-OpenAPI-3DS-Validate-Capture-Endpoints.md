@@ -23,9 +23,10 @@ The OpenAPI specification (v0.5.0) fully implements both validate-capture endpoi
 1. [Endpoint Implementation Review](#1-endpoint-implementation-review)
 2. [Schema Validation](#2-schema-validation)
 3. [Enhancement Recommendations](#3-enhancement-recommendations)
-4. [Implementation Checklist](#4-implementation-checklist)
-5. [Testing Requirements](#5-testing-requirements)
-6. [Appendix: Complete Schema Reference](#6-appendix-complete-schema-reference)
+4. [Payment Decline Handling Philosophy](#4-payment-decline-handling-philosophy)
+5. [Implementation Checklist](#5-implementation-checklist)
+6. [Testing Requirements](#6-testing-requirements)
+7. [Appendix: Complete Schema Reference](#7-appendix-complete-schema-reference)
 
 ---
 
@@ -346,7 +347,53 @@ Add a note about session ownership in the 202 response description:
 
 ---
 
-## 4. Implementation Checklist
+## 4. Payment Decline Handling
+
+### 4.1 Design Decision: HTTP 422 for Payment Declines
+
+**Status:** ✅ IMPLEMENTED in v0.5.0 (lines 154-207)
+
+Payment declines return **HTTP 422**, not HTTP 200. This differs from the Payment API which returns HTTP 200 for declines.
+
+**Why Different?**
+- **Checkout API**: Creates orders → No order created = HTTP 422
+- **Payment API**: Processes payments → Transaction attempted = HTTP 200
+
+**Key Points:**
+- Supports multiple payment methods (e.g., gift card + credit card)
+- All payments must succeed; any failure rolls back entire transaction
+- Consistent error handling: all checkout failures (stock, delivery, payment) use HTTP 422
+
+### 4.2 Payment Validation Codes
+
+The OpenAPI specification includes comprehensive payment-related validation codes:
+
+**Supported Payment Decline Codes:**
+
+These codes map directly to error codes returned by the `@dw-digital-commerce/payments-sdk`:
+
+- `PaymentDeclined` - Generic payment decline (maps to SDK's `BUSINESS_PAYMENT_DECLINED`)
+- `InsufficientFunds` - Gift voucher or stored payment has insufficient balance (maps to SDK's `BUSINESS_INSUFFICIENT_FUNDS`)
+- `CardExpired` - Payment card has expired (maps to SDK's `BUSINESS_CARD_EXPIRED`)
+
+**Note:** The SDK only provides these three business error codes for payment declines. More granular codes (like specific card decline reasons) are not available from the payment providers.
+
+### 4.3 Payment Decline Examples
+
+The BusinessError response (lines 2013-2105) includes four payment decline examples:
+
+1. **payment-declined-single**: Single payment method declined
+2. **payment-declined-mixed-payment**: Mixed payment with credit card failure
+3. **payment-insufficient-funds-gift-card**: Gift card with insufficient balance
+4. **payment-multiple-decline-reasons**: Multiple payment failures in one request
+
+### 4.4 Client Implementation Guidance
+
+See OpenAPI lines 171-207 for complete implementation pattern and example response.
+
+---
+
+## 5. Implementation Checklist
 
 ### For Technical Architect (Microservice TA)
 
@@ -380,9 +427,9 @@ npm run validate:openapi:spectral       # Run Spectral linter rules
 
 ---
 
-## 5. Testing Requirements
+## 6. Testing Requirements
 
-### 5.1 OpenAPI Validation Testing
+### 6.1 OpenAPI Validation Testing
 
 After implementing the 403 response:
 
@@ -396,7 +443,7 @@ npm run validate:openapi:spectral
 # Expected: No errors, all rules pass
 ```
 
-### 5.2 API Contract Testing
+### 6.2 API Contract Testing
 
 #### Test Scenario: Session Ownership Violation
 
@@ -471,7 +518,7 @@ expect(response.status).toBe(403);
 expect(response.body.errors[0].message).toContain('brand context');
 ```
 
-### 5.3 Documentation Testing
+### 6.3 Documentation Testing
 
 - [ ] Verify 403 response appears in generated API documentation (Swagger UI, ReDoc)
 - [ ] Confirm examples render correctly in documentation tools
@@ -479,9 +526,9 @@ expect(response.body.errors[0].message).toContain('brand context');
 
 ---
 
-## 6. Appendix: Complete Schema Reference
+## 7. Appendix: Complete Schema Reference
 
-### 6.1 Request Schema Hierarchy
+### 7.1 Request Schema Hierarchy
 
 ```
 ThreeDSValidateCaptureRequest
@@ -495,7 +542,7 @@ ThreeDSValidateCaptureRequest
         └── xid: string (optional, for 3DS v1)
 ```
 
-### 6.2 Response Schema Hierarchy
+### 7.2 Response Schema Hierarchy
 
 #### 201 Created - Success
 ```
@@ -572,7 +619,7 @@ CheckoutValidations
         └── lineItemId: string
 ```
 
-### 6.3 Error Code Reference
+### 7.3 Error Code Reference
 
 | HTTP Status | Error Code | Meaning |
 |-------------|------------|---------|
@@ -581,7 +628,14 @@ CheckoutValidations
 | 409 | `SessionAlreadyUsed` | Session already consumed (single-use violation) |
 | 409 | `SessionExpired` | Session TTL exceeded (>30 minutes) |
 | 409 | `CartVersionMismatch` | Cart modified since session creation |
-| 422 | `PaymentDeclined` | Payment processor declined transaction |
+| 422 | `PaymentDeclined` | Generic payment decline from processor |
+| 422 | `CardDeclined` | Credit/debit card declined by issuer |
+| 422 | `CardExpired` | Payment card has expired |
+| 422 | `InsufficientFunds` | Insufficient gift voucher balance |
+| 422 | `InvalidCardDetails` | Card details invalid or incomplete |
+| 422 | `PaymentProcessorError` | Payment processor error |
+| 422 | `FraudSuspected` | Payment blocked due to fraud |
+| 422 | `PaymentMethodNotSupported` | Payment method not supported |
 | 422 | `ThreeDSValidationFailed` | 3DS completion data invalid |
 | 422 | `CartModified` | Cart content changed during 3DS flow |
 

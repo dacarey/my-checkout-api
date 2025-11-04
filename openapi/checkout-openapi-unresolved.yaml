@@ -152,6 +152,61 @@ info:
     This makes our API more self-documenting and easier to integrate, as developers can rely on standard HTTP semantics.
 
     ---
+    # Payment Decline Handling
+
+    ## Why Payment Declines Return HTTP 422
+
+    Payment declines return **HTTP 422 (Business Validation Error)**, not HTTP 200. This differs from the Payment API's design.
+
+    **Why Different from Payment API?**
+    - **Checkout API**: Creates orders → Payment decline means no order created → HTTP 422
+    - **Payment API**: Processes payments → Transaction attempt succeeded → HTTP 200
+
+    **Multiple Payment Support:**
+    Orders can use multiple payment methods (e.g., £30 gift card + £70 credit card). If any payment fails, all are rolled back and no order is created.
+
+    **Consistent Error Handling:**
+    All checkout failures (stock issues, delivery restrictions, payment declines) return HTTP 422, enabling uniform client-side error handling.
+
+    ### Client Implementation
+
+    ```javascript
+    try {
+      const order = await checkout(cart, payments);
+      redirectToOrderConfirmation(order.id);
+    } catch (error) {
+      if (error.status === 422) {
+        const { orderLevel, lineItemLevel } = error.validations;
+
+        // Filter payment-related errors
+        const paymentErrors = orderLevel.filter(v =>
+          ['PaymentDeclined', 'InsufficientFunds', 'CardExpired'].includes(v.code)
+        );
+
+        if (paymentErrors.length > 0) {
+          promptForAlternativePayment(paymentErrors);
+        }
+      }
+    }
+    ```
+
+    **Payment Decline Example:**
+    ```json
+    HTTP 422
+    {
+      "orderLevel": [
+        {
+          "code": "PaymentDeclined",
+          "message": "Payment was declined by the card issuer."
+        }
+      ],
+      "lineItemLevel": []
+    }
+    ```
+
+    **No order created** - cart remains unchanged for retry with alternative payment.
+
+    ---
     # Checkout Validation Handling Guide
 
     ## Understanding Checkout Validations
@@ -1681,21 +1736,27 @@ components:
             - InvalidCartState
             - PaymentAmountMismatch
             - DeliveryRestriction
-            - InsufficientFunds
+            # Payment-related validation codes
             - PaymentDeclined
+            - InsufficientFunds
+            - CardExpired
             # Line item-level validation codes
             - ItemUnavailable
             - ItemOutOfStock
             - ComplianceRestriction
             - QuantityExceedsLimit
           x-enum-descriptions:
+            # Order-level descriptions
             - "The specified cart does not exist or is not accessible to the current user"
             - "The cart version has changed since the checkout request was initiated"
             - "The cart is in a state that prevents checkout (empty, locked, or invalid)"
             - "The sum of payment amounts does not match the cart total"
             - "Delivery is not available to the specified delivery address"
+            # Payment-related descriptions
+            - "Payment was declined by the payment processor or gateway (generic decline)"
             - "Insufficient funds available on gift voucher or stored payment method"
-            - "Payment was declined by the payment processor or gateway"
+            - "Payment card has expired and cannot be used"
+            # Line item-level descriptions
             - "The line item is no longer available for purchase"
             - "The requested quantity exceeds the available stock for this item"
             - "The item cannot be sold due to regulatory or compliance restrictions"
@@ -1918,8 +1979,16 @@ components:
         * `InvalidCartState` - Cart is empty, locked, or invalid
         * `PaymentAmountMismatch` - Payment amounts don't match cart total
         * `DeliveryRestriction` - Delivery unavailable to specified address
+
+        **Payment Issues:**
+        * `PaymentDeclined` - Generic payment decline from processor
+        * `CardDeclined` - Credit/debit card declined by issuer
+        * `CardExpired` - Payment card has expired
         * `InsufficientFunds` - Insufficient gift voucher balance
-        * `PaymentDeclined` - Payment declined by processor
+        * `InvalidCardDetails` - Card details invalid or incomplete
+        * `PaymentProcessorError` - Processor error during transaction
+        * `FraudSuspected` - Payment blocked due to fraud detection
+        * `PaymentMethodNotSupported` - Payment method not supported
 
         **Line Item Issues:**
         * `ItemUnavailable` - Item no longer available for purchase
@@ -1979,6 +2048,36 @@ components:
                   - code: "QuantityExceedsLimit"
                     message: "Maximum 6 units per order allowed for 'Limited Edition Port 2010', but 10 were requested."
                     lineItemId: "e67f4dc9-ec1a-4d63-b96f-9ab1ac99f1a5"
+            payment-declined-single:
+              summary: Single payment method declined
+              value:
+                orderLevel:
+                  - code: "PaymentDeclined"
+                    message: "Payment was declined by the card issuer. Reason: Insufficient funds."
+                lineItemLevel: []
+            payment-declined-mixed-payment:
+              summary: Mixed payment with partial failure
+              value:
+                orderLevel:
+                  - code: "PaymentDeclined"
+                    message: "Credit card payment of £70.00 was declined by the issuer."
+                lineItemLevel: []
+            payment-insufficient-funds-gift-card:
+              summary: Insufficient gift card balance
+              value:
+                orderLevel:
+                  - code: "InsufficientFunds"
+                    message: "Gift voucher balance of £15.00 is insufficient for requested payment of £30.00."
+                lineItemLevel: []
+            payment-multiple-decline-reasons:
+              summary: Multiple payment-related validation failures
+              value:
+                orderLevel:
+                  - code: "CardExpired"
+                    message: "Primary credit card payment was declined because the card has expired."
+                  - code: "InsufficientFunds"
+                    message: "Gift voucher GV-2024-ABC123 has insufficient balance (£10.00 available, £20.00 required)."
+                lineItemLevel: []
     InternalError:
       $ref: "https://api.swaggerhub.com/apis/Direct_Wines/CommonModelDefinitionSuite/1.0.0#/components/responses/InternalError"
     TooManyRequestsError:

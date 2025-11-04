@@ -662,7 +662,17 @@ async function cleanupSession(authenticationId: string): Promise<void> {
 
 ## 4. Error Handling Specification
 
-### 4.1 Error Response Mapping
+### 4.1 Payment Decline Handling
+
+**Design Decision:** Payment declines return **HTTP 422**, not HTTP 200.
+
+**Why?** Checkout API creates orders. Payment decline = no order created = HTTP 422.
+
+**Differs from Payment API:** Payment API returns HTTP 200 (transaction attempted successfully).
+
+See OpenAPI specification lines 154-207 for complete documentation.
+
+### 4.2 Error Response Mapping
 
 | Error Type | HTTP Status | Error Code | When to Use |
 |------------|-------------|------------|-------------|
@@ -671,10 +681,94 @@ async function cleanupSession(authenticationId: string): Promise<void> {
 | `ConflictError` | 409 | `SessionNotFound` | Session doesn't exist or expired |
 | `ConflictError` | 409 | `SessionAlreadyUsed` | Session already consumed |
 | `UnprocessableEntityError` | 422 | `CartModified` | Cart version changed during 3DS |
-| `UnprocessableEntityError` | 422 | `PaymentDeclined` | Payment processor declined |
+| `UnprocessableEntityError` | 422 | `PaymentDeclined` | Generic payment decline from processor |
+| `UnprocessableEntityError` | 422 | `CardDeclined` | Credit/debit card declined by issuer |
+| `UnprocessableEntityError` | 422 | `CardExpired` | Payment card has expired |
+| `UnprocessableEntityError` | 422 | `InsufficientFunds` | Gift voucher insufficient balance |
+| `UnprocessableEntityError` | 422 | `InvalidCardDetails` | Card details invalid |
+| `UnprocessableEntityError` | 422 | `PaymentProcessorError` | Processor error during transaction |
+| `UnprocessableEntityError` | 422 | `FraudSuspected` | Payment blocked for fraud |
+| `UnprocessableEntityError` | 422 | `PaymentMethodNotSupported` | Payment method not supported |
 | `UnprocessableEntityError` | 422 | `ThreeDSValidationFailed` | 3DS completion data invalid |
 
-### 4.2 Error Handler Implementation
+### 4.3 Payment Decline Implementation Guidance
+
+When processing payment authorization results from the Payments SDK, map specific decline reasons to appropriate validation codes:
+
+```typescript
+/**
+ * Map payment-sdk error code to Checkout API validation code
+ *
+ * The @dw-digital-commerce/payments-sdk returns structured error codes
+ * that we map 1:1 to our validation codes.
+ */
+function mapPaymentErrorToValidationCode(paymentError: PaymentError): string {
+  // Direct 1:1 mapping from SDK error codes to API validation codes
+  const errorCodeMap: Record<string, string> = {
+    'BUSINESS_PAYMENT_DECLINED': 'PaymentDeclined',
+    'BUSINESS_INSUFFICIENT_FUNDS': 'InsufficientFunds',
+    'BUSINESS_CARD_EXPIRED': 'CardExpired'
+  };
+
+  return errorCodeMap[paymentError.code] || 'PaymentDeclined';
+}
+```
+
+**Example Usage in Payment Capture/Validation:**
+```typescript
+import { PaymentService, PaymentError, ErrorCodes } from '@dw-digital-commerce/payments-sdk';
+
+async function executePaymentCapture(
+  paymentRequest: PaymentCapturePayload,
+  merchantConfig: MerchantConfig
+): Promise<PaymentCaptureResponse> {
+  const paymentService = new PaymentService(merchantConfig.processor, {
+    merchantID: merchantConfig.merchantID,
+    merchantKeyId: merchantConfig.merchantKeyId,
+    merchantsecretKey: merchantConfig.merchantsecretKey
+  });
+
+  try {
+    const result = await paymentService.paymentCapture(paymentRequest);
+
+    if (result.status === 'DECLINED' && result.error) {
+      // Map SDK error code to API validation code
+      const validationCode = mapPaymentErrorToValidationCode(result.error);
+
+      throw new UnprocessableEntityError(
+        validationCode,
+        result.error.message
+      );
+    }
+
+    if (result.status === 'ERROR' && result.error) {
+      // Technical/system errors should throw 500, not 422
+      throw new Error(`Payment processing error: ${result.error.message}`);
+    }
+
+    return result;
+  } catch (error) {
+    if (error instanceof PaymentError) {
+      // PaymentError from SDK - map to validation code
+      if (error.isBusinessError()) {
+        const validationCode = mapPaymentErrorToValidationCode(error);
+        throw new UnprocessableEntityError(validationCode, error.message);
+      }
+      // Non-business errors (network, provider, system) throw 500
+      throw new Error(`Payment system error: ${error.message}`);
+    }
+
+    if (error instanceof UnprocessableEntityError) {
+      throw error; // Re-throw validation errors
+    }
+
+    // Unexpected errors
+    throw error;
+  }
+}
+```
+
+### 4.4 Error Handler Implementation
 
 ```typescript
 function handleError(
@@ -754,7 +848,7 @@ function handleError(
 }
 ```
 
-### 4.3 Custom Error Classes
+### 4.5 Custom Error Classes
 
 ```typescript
 // lambda/src/errors/domain-errors.ts
