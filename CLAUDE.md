@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a serverless checkout API project designed for multi-account AWS deployments using AWS Lambda, API Gateway, and CDK (TypeScript). The project is in alpha stage (v0.1.0) and follows a template-based architecture for serverless microservices with blue-green deployment support.
+This is a serverless checkout API project designed for multi-account AWS deployments using AWS Lambda, API Gateway, and CDK (TypeScript). The project is currently at v0.5.0 and follows a template-based architecture for serverless microservices with blue-green deployment support. It implements tokenized payment capture with 3DS authentication support.
 
 ## Key Architecture Patterns
 
@@ -17,18 +17,32 @@ This is a serverless checkout API project designed for multi-account AWS deploym
 ### Project Structure
 ```
 my-checkout-api/
-├── docs/docs/howto/              # Template documentation and integration guides
-├── lambda/                        # Lambda function code (TypeScript)
-├── infra/                         # CDK infrastructure as code (TypeScript)
-│   ├── src/bin/                   # CDK app entry point
-│   ├── src/lib/                   # Stack definitions and configuration
-│   └── test/                      # Vitest tests for CDK stacks
-├── openapi/                       # OpenAPI 3 specification files
-└── package.json                   # NPM workspace root
+├── docs/docs/howto/                        # Template documentation and integration guides
+├── lambda/                                  # Lambda function code (TypeScript)
+├── infra/                                   # CDK infrastructure as code (TypeScript)
+│   ├── src/bin/                             # CDK app entry point
+│   ├── src/lib/                             # Stack definitions and configuration
+│   └── test/                                # Vitest tests for CDK stacks
+├── openapi/                                 # OpenAPI 3 specification files
+├── openapi-spec-workflow/                   # OpenAPI versioning workspace
+├── packages/
+│   └── checkout-3ds-session-service/
+│       ├── library/                         # 3DS session management library
+│       └── infra/                           # 3DS session service CDK stacks
+├── examples/                                # Example client code and test suite
+└── package.json                             # NPM workspace root
 ```
 
 ### NPM Workspace Configuration
-This project uses NPM workspaces with `lambda/` and `infra/` as workspace packages. Always run `npm ci` from the root to install all dependencies.
+This project uses NPM workspaces with the following packages:
+- `lambda/` - Main Lambda function code
+- `infra/` - Main CDK infrastructure
+- `openapi-spec-workflow/` - OpenAPI versioning
+- `packages/checkout-3ds-session-service/library` - 3DS session service library
+- `packages/checkout-3ds-session-service/infra` - 3DS session service infrastructure
+- `examples/` - Example implementations and test suite
+
+Always run `npm ci` from the root to install all workspace dependencies.
 
 ## Development Commands
 
@@ -42,6 +56,22 @@ npm ci                             # Install all workspace dependencies
 npm run build                      # Build CDK infrastructure
 npm test                           # Run Vitest tests in watch mode
 npm run test:run                   # Run tests once (CI mode)
+
+# 3DS Session Service tests
+npm run test:3ds                   # Run 3DS library tests in watch mode
+npm run test:3ds:run               # Run 3DS library tests once
+npm run test:3ds-infra             # Run 3DS infra tests in watch mode
+npm run test:3ds-infra:run         # Run 3DS infra tests once
+
+# Build 3DS packages
+npm run build:3ds-lib              # Build 3DS session library
+npm run build:3ds-infra            # Build 3DS infra code
+
+# Example client tests
+npm run examples                   # Run comprehensive API test suite
+npm run examples:verbose           # Run tests with verbose output
+npm run examples:dev               # Run examples in dev mode (TypeScript)
+npm run examples:build             # Build examples
 ```
 
 ### Deployment (Single Account Development)
@@ -88,13 +118,22 @@ Default profile: `dw-sandbox`, default environment: `dev`
 - `region`: AWS region (default: eu-west-1)
 - `apiAccountId`: AWS account ID for API Gateway
 - `serviceAccountId`: AWS account ID for Lambda functions
-- `functionNamePrefix`: Prefix for Lambda function names
+- `functionNamePrefix`: Prefix for Lambda function names (default: 'checkout')
+- `brandKey`: Default brand for payment processing (default: 'uklait')
 - `lambdaLiveAliasArn`: ARN of Lambda live alias (required for ApiStack)
 
 ### Environment Variables
+
+**Deployment Configuration:**
 - `BYPASS_AUTHORIZER=true`: Disables API Gateway authentication (dev environment only)
 - `AWS_PROFILE`: AWS CLI profile to use
 - `ENVIRONMENT`: Deployment environment name
+- `BRAND_KEY`: Default brand key
+
+**Lambda Runtime Environment Variables:**
+- `USE_REAL_PAYMENT_PROVIDER`: Set to 'true' for real Cybersource, 'false' for mock provider
+- `PAYMENT_CREDENTIALS_SECRET`: AWS Secrets Manager secret name containing payment provider credentials
+- `DEFAULT_BRANDKEY`: Default brand if not specified in API path (default: 'uklait')
 
 ## CDK Stack Architecture
 
@@ -222,6 +261,55 @@ The Lambda function is defined in [lambda/src/index.ts](lambda/src/index.ts):
 - Bundled by esbuild during CDK deployment (no separate build step required for Lambda code)
 - TypeScript compilation configured in [lambda/package.json](lambda/package.json)
 
+### API Endpoints
+The Lambda handler routes requests to specialized handlers:
+
+**Token Capture Endpoints:**
+- `POST /checkout/me/token/capture` - Authenticated user token capture (may trigger 3DS)
+- `POST /checkout/in-brand/{brandkey}/token/capture` - Brand-specific token capture
+
+**3DS Validate-Capture Endpoints (v0.5.0+):**
+- `POST /checkout/me/3ds/validate-capture` - Complete payment after 3DS challenge (authenticated)
+- `POST /checkout/in-brand/{brandkey}/3ds/validate-capture` - Brand-specific 3DS completion
+
+Handlers are located in `lambda/src/handlers/`:
+- `token-capture-handler.ts` - Processes initial payment capture, returns 3DS session if required
+- `validate-capture-handler.ts` - Completes payment after 3DS authentication
+
+## 3DS Session Service
+
+The `@dw-digital-commerce/checkout-3ds-session-service` package provides session management for 3DS authentication flows.
+
+### Architecture
+Located in `packages/checkout-3ds-session-service/`:
+- **library/** - Core session service with multiple provider implementations
+  - `SessionService` interface with `create()`, `get()`, `invalidate()` methods
+  - DynamoDB provider (`./dynamodb`) for production use with 30-minute TTL
+  - Mock provider (`./mock`) for testing and development
+- **infra/** - CDK stack for DynamoDB table deployment
+
+### Key Concepts
+- Sessions store payment context between token-capture (202 response) and validate-capture calls
+- Session IDs (`threeDSSessionId`) are returned in 202 responses when 3DS is required
+- Sessions automatically expire after 30 minutes (DynamoDB TTL)
+- Sessions can only be used once (invalidated on successful validate-capture)
+- Error codes: 404 (expired/not found), 409 (already used), 503 (service unavailable)
+
+### Usage
+```typescript
+import { SessionService } from '@dw-digital-commerce/checkout-3ds-session-service';
+import { DynamoDBSessionProvider } from '@dw-digital-commerce/checkout-3ds-session-service/dynamodb';
+
+const provider = new DynamoDBSessionProvider(tableName);
+const service = new SessionService(provider);
+
+// Create session
+const sessionId = await service.create(paymentData, ttlMinutes);
+
+// Retrieve and invalidate
+const data = await service.get(sessionId);
+```
+
 ## CDK Entry Point
 
 The CDK application entry point is [infra/src/bin/infra.ts](infra/src/bin/infra.ts):
@@ -231,7 +319,57 @@ The CDK application entry point is [infra/src/bin/infra.ts](infra/src/bin/infra.
 - Validates required context for ApiStack deployment
 - Logs configuration on startup
 
+## Examples and Testing
+
+### Example Client Code
+The `examples/` workspace provides a comprehensive test suite for the API:
+- Location: `examples/src/`
+- Run with: `npm run examples` or `./test-checkout-api.sh`
+- Automatically uses API Gateway URL from `.api-deployment.lock` if available
+- Supports verbose mode: `npm run examples:verbose`
+
+### Test Coverage
+The test suite includes scenarios for:
+- Single tokenized payment (credit card under £150, immediate completion)
+- Mixed payment methods (gift voucher + credit card)
+- 3DS required scenario (payment over £150 triggers 3DS authentication)
+- Stateless endpoint (in-brand agent checkout)
+- Error scenarios (422 validation errors, 400 bad requests)
+- CORS preflight (OPTIONS request handling)
+
+### API Deployment Lock File
+After deployment, a `.api-deployment.lock` file is created containing:
+- API Gateway ID
+- API Gateway URL
+- Deployment timestamp
+- Environment
+
+This file is used by test scripts and examples to automatically discover the API endpoint.
+
+## Version Bumping Strategy
+
+The project supports independent versioning for OpenAPI specs and implementation code:
+
+```bash
+# Bump OpenAPI specification only
+npm run version:openapi patch|minor|major
+
+# Bump implementation code only (root/lambda/infra workspaces)
+npm run version:impl patch|minor|major
+
+# Bump everything (all workspaces + OpenAPI spec)
+npm run version:all patch|minor|major
+```
+
+**Important Notes:**
+- OpenAPI spec version (in schema) can diverge from package.json versions
+- `version:openapi` updates `openapi-spec-workflow/package.json` and OpenAPI schema version
+- `version:impl` updates root, lambda, and infra packages (excludes openapi-spec-workflow)
+- `version:all` bumps all packages with the same increment type
+- See [docs/VERSION-BUMP-GUIDE.md](docs/VERSION-BUMP-GUIDE.md) for detailed usage
+
 ## Reference Documentation
 
 - Multi-account template guide: [docs/docs/howto/template-multi-account-serverless-api.md](docs/docs/howto/template-multi-account-serverless-api.md)
 - AWS Lambda integration: [docs/docs/howto/Hoto-integrate-awslambda-with-payments-sdk.md](docs/docs/howto/Hoto-integrate-awslambda-with-payments-sdk.md)
+- Version bump guide: [docs/VERSION-BUMP-GUIDE.md](docs/VERSION-BUMP-GUIDE.md)
