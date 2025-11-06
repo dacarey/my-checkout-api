@@ -20,7 +20,7 @@
     "@seriousme/openapi-schema-validator": "^1.6.4",
     "@stoplight/spectral-cli": "^6.11.0",
     "jest-openapi": "^0.14.2",
-    "swaggerhub-cli": "^0.9.1"
+    "swaggerhub-cli": "^0.10.0"
   },
   "engines": {
     "node": ">=22.0.0"
