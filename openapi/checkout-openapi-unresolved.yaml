@@ -17,7 +17,7 @@ info:
     - 3DS authentication flow support with validate-capture endpoints
     - Complete 3D Secure authentication and order completion
 
-    **Payment API Integration**: This API is aligned with Payment API v0.2.0 for payment
+    **Payment API Integration**: This API is aligned with Payment API v0.3.0 for payment
     processing schemas, ensuring consistency in address structures (ISO 19160), 3DS flows,
     and payment token handling.
 
@@ -117,14 +117,15 @@ info:
     ## Step 1: Initial Order Capture
     - Call `/me/token/capture` or `/in-brand/{brandkey}/token/capture`
     - If 3DS is required, receive **HTTP 202 Accepted** with:
-      - `authenticationId`: Unique session identifier
-      - `threeDSUrl`: URL for customer authentication challenge
-      - Authentication context and next action instructions
+      - `threeDSSessionId`: Unique session identifier
+      - `challengeInfo`: Complete challenge information including stepUpUrl and stepUpToken
+      - `paymentContext`: Payment amount and method details
+      - `status` and `timestamp`: Session status and expiry tracking
 
     ## Step 2: Complete 3DS Authentication
     - After customer completes the 3DS challenge
     - Call `/me/3ds/validate-capture` or `/in-brand/{brandkey}/3ds/validate-capture`
-    - Submit the `authenticationId` and 3DS completion data (CAVV, ECI, transaction ID)
+    - Submit the `threeDSSessionId` and 3DS completion data (CAVV, ECI, transaction ID)
     - Receive **HTTP 201 Created** with the completed order
 
     ## Important Notes
@@ -495,7 +496,7 @@ paths:
               description: URL of the authentication session
               schema:
                 type: string
-                example: "/authentication-sessions/auth-3169811e-fa0a-321"
+                example: "/3ds-sessions/auth-3169811e-fa0a-321"
           content:
             application/json:
               schema:
@@ -504,22 +505,22 @@ paths:
                 requires-3ds-validation:
                   summary: 3DS authentication required
                   value:
-                    authenticationId: "auth-3169811e-fa0a-321"
+                    threeDSSessionId: "auth-3169811e-fa0a-321"
                     cartId: "3169811e-fa0a-789"
-                    threeDSUrl: "https://3ds.psp.com/challenge/abc123"
                     transactionId: "7507655240516609704808"
-                    merchantReference: "YOUR_MID"
+                    status: "requires3DSAuthentication"
+                    timestamp: "2025-11-06T14:30:00Z"
+                    challengeInfo:
+                      stepUpUrl: "https://centinelapi.cardinalcommerce.com/V2/Cruise/StepUp"
+                      stepUpToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+                      authenticationTransactionId: "f5d1e3c2-1234-5678-9012-345678901234"
+                      threeDSServerTransactionId: "8a829417-232b-4f3e-8020-e88c9a5a8b32"
+                      directoryServerTransactionId: "d5180465-bae3-4df7-940d-3b029b7de81a"
                     paymentContext:
                       amount:
                         amount: 159.99
                         currencyCode: "EUR"
                       paymentMethod: "tokenised"
-                    nextAction:
-                      type: "redirect_to_url"
-                      redirectToUrl:
-                        url: "https://3ds.psp.com/challenge/abc123"
-                        method: "POST"
-                        returnUrl: "https://merchant.example.com/checkout/3ds-return"
         "400":
           $ref: "#/components/responses/StructureError"
         "401":
@@ -613,9 +614,9 @@ paths:
         completes the 3DS challenge presented in the 202 response from `/me/token/capture`.
 
         **Process Flow:**
-        1. **Initial Capture**: Call `/me/token/capture` → receive HTTP 202 with authenticationId
+        1. **Initial Capture**: Call `/me/token/capture` → receive HTTP 202 with threeDSSessionId
         2. **3DS Challenge**: Redirect customer to 3DS URL for authentication
-        3. **Completion**: Call this endpoint with authenticationId and 3DS results
+        3. **Completion**: Call this endpoint with threeDSSessionId and 3DS results
         4. **Order Creation**: Server validates 3DS data and creates order
 
         **Response Codes:**
@@ -649,7 +650,7 @@ paths:
               successful-3ds-completion:
                 summary: Successful 3DS authentication completion
                 value:
-                  authenticationId: "auth-3169811e-fa0a-321"
+                  threeDSSessionId: "auth-3169811e-fa0a-321"
                   threeDSData:
                     phase: "completion"
                     completion:
@@ -659,7 +660,7 @@ paths:
               3ds-v1-completion:
                 summary: 3DS v1 completion with XID
                 value:
-                  authenticationId: "auth-3169811e-fa0a-456"
+                  threeDSSessionId: "auth-3169811e-fa0a-456"
                   threeDSData:
                     phase: "completion"
                     completion:
@@ -952,7 +953,7 @@ paths:
               description: URL of the authentication session
               schema:
                 type: string
-                example: "/authentication-sessions/auth-3169811e-fa0a-456"
+                example: "/3ds-sessions/auth-3169811e-fa0a-456"
           content:
             application/json:
               schema:
@@ -1066,9 +1067,9 @@ paths:
         `/in-brand/{brandkey}/token/capture`.
 
         **Process Flow:**
-        1. **Initial Capture**: Call `/in-brand/{brandkey}/token/capture` → receive HTTP 202 with authenticationId
+        1. **Initial Capture**: Call `/in-brand/{brandkey}/token/capture` → receive HTTP 202 with threeDSSessionId
         2. **3DS Challenge**: Redirect customer to 3DS URL for authentication
-        3. **Completion**: Call this endpoint with authenticationId and 3DS results
+        3. **Completion**: Call this endpoint with threeDSSessionId and 3DS results
         4. **Order Creation**: Server validates 3DS data and creates order
 
         **Response Codes:**
@@ -1120,7 +1121,7 @@ paths:
               call-center-3ds-completion:
                 summary: Call center agent completing 3DS for customer
                 value:
-                  authenticationId: "auth-3169811e-fa0a-456"
+                  threeDSSessionId: "auth-3169811e-fa0a-456"
                   threeDSData:
                     phase: "completion"
                     completion:
@@ -1130,7 +1131,7 @@ paths:
               backend-service-3ds-completion:
                 summary: Backend service completing 3DS automatically
                 value:
-                  authenticationId: "auth-3169811e-fa0a-789"
+                  threeDSSessionId: "auth-3169811e-fa0a-789"
                   threeDSData:
                     phase: "completion"
                     completion:
@@ -1292,16 +1293,16 @@ components:
 
   schemas:
     # ----------------------------------------
-    #  Payment API v0.2.0 Schema References
+    #  Payment API v0.3.0 Schema References
     #
     # These schemas are defined in the Payment API and referenced here to ensure
     # consistency across payment processing endpoints.
 
     PaymentBillingDetails:
-      $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.2.0#/components/schemas/AddressableParty'
+      $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.3.0#/components/schemas/AddressableParty'
 
     PaymentThreeDSData:
-      $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.2.0#/components/schemas/ThreeDSData'
+      $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.3.0#/components/schemas/ThreeDSData'
 
     # ----------------------------------------
     #  Common Objects
@@ -1383,7 +1384,7 @@ components:
     TokenisedPaymentDetails:
       type: object
       description: |
-        Tokenised payment details aligned with Payment API v0.2.0 TokenAuthoriseRequest.
+        Tokenised payment details aligned with Payment API v0.3.0 TokenAuthoriseRequest.
         This schema contains the essential fields needed for checkout payment processing.
 
         **Alignment with Payment API**: This schema is a subset of the Payment API's
@@ -1793,42 +1794,109 @@ components:
       type: object
       description: |
         Response returned when 3D Secure authentication is required before order creation.
-        The customer must complete the authentication challenge before the order can be created.
-
-        Use the `/3ds/validate-capture` endpoint after successful authentication to complete
+        The customer must complete the authentication challenge using the challengeInfo details.
+        Use the /3ds/validate-capture endpoint after successful authentication to complete
         the order creation.
+
+        This response includes challengeInfo aligned with Payment API v0.3.0 for consistency
+        in 3DS authentication flow.
       required:
-        - authenticationId
+        - threeDSSessionId
         - cartId
-        - threeDSUrl
         - transactionId
+        - status
+        - timestamp
+        - challengeInfo
         - paymentContext
-        - nextAction
       properties:
-        authenticationId:
+        threeDSSessionId:
           type: string
-          description: Unique identifier for this 3DS authentication session.
+          description: |
+            Unique identifier for this 3DS authentication session in the Checkout API.
+            This session expires after 30 minutes and is single-use.
+            Must be provided in the subsequent /3ds/validate-capture request.
           example: "auth-3169811e-fa0a-321"
         cartId:
           type: string
-          description: The cart ID being checked out (will become order ID after successful authentication).
+          description: |
+            The cart ID being checked out. This will become the order ID after
+            successful 3DS authentication and validation.
           example: "3169811e-fa0a-789"
-        threeDSUrl:
-          type: string
-          format: uri
-          description: URL for the 3DS authentication challenge.
-          example: "https://3ds.psp.com/challenge/abc123"
         transactionId:
           type: string
-          description: Payment processor transaction ID for tracking.
+          description: |
+            Payment API transaction ID for this payment attempt.
+            Used internally to correlate with Payment API /3ds/validate-capture call.
           example: "7507655240516609704808"
-        merchantReference:
+        status:
           type: string
-          description: Merchant reference for the payment.
-          example: "YOUR_MID"
+          enum: [requires3DSAuthentication]
+          description: |
+            Explicit status indicating 3DS authentication is required.
+            Complements HTTP 202 status code for self-documenting responses.
+          example: "requires3DSAuthentication"
+        timestamp:
+          type: string
+          format: date-time
+          description: |
+            ISO 8601 timestamp when this 3DS authentication session was created.
+            Use this to track the 30-minute session expiry window.
+          example: "2025-11-06T14:30:00Z"
+        challengeInfo:
+          type: object
+          description: |
+            Complete 3DS challenge information from Payment API v0.3.0.
+            This object contains all details needed to present the 3DS challenge
+            to the customer using Cardinal Commerce/Cybersource.
+          required:
+            - stepUpUrl
+            - stepUpToken
+          properties:
+            stepUpUrl:
+              type: string
+              format: uri
+              description: |
+                Cardinal Commerce/Cybersource Step-Up URL - the primary endpoint for
+                presenting the 3DS challenge in an iframe.
+                The frontend must POST the stepUpToken to this URL.
+              example: "https://centinelapi.cardinalcommerce.com/V2/Cruise/StepUp"
+            stepUpToken:
+              type: string
+              description: |
+                JWT token that must be POSTed to stepUpUrl to initiate the 3DS challenge.
+                This token authenticates the challenge request to Cardinal Commerce.
+                CRITICAL: Without this token, 3DS authentication will fail.
+              example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+            acsUrl:
+              type: string
+              format: uri
+              description: |
+                Issuing bank's Access Control Server (ACS) URL.
+                This is for diagnostic purposes only and should not be used by merchants.
+              example: "https://acs.issuer.com/3ds/acs/challenge"
+            authenticationTransactionId:
+              type: string
+              description: |
+                Authentication transaction identifier used for correlation and debugging.
+                Useful for support teams troubleshooting 3DS authentication issues.
+              example: "f5d1e3c2-1234-5678-9012-345678901234"
+            threeDSServerTransactionId:
+              type: string
+              description: |
+                3DS server transaction identifier from the payment service provider.
+                Used for internal tracking and PSP integration debugging.
+              example: "8a829417-232b-4f3e-8020-e88c9a5a8b32"
+            directoryServerTransactionId:
+              type: string
+              description: |
+                Directory server transaction identifier from the card network.
+                Used for payment network-level tracking and debugging.
+              example: "d5180465-bae3-4df7-940d-3b029b7de81a"
         paymentContext:
           type: object
-          description: Context about the payment requiring authentication.
+          description: |
+            Business context about the payment requiring authentication.
+            Helps the frontend display meaningful messages to the customer.
           required:
             - amount
             - paymentMethod
@@ -1838,43 +1906,8 @@ components:
             paymentMethod:
               type: string
               enum: [tokenised]
-              description: Type of payment requiring authentication.
+              description: Type of payment method requiring authentication.
               example: "tokenised"
-        nextAction:
-          type: object
-          description: Instructions for the next action required (following Stripe's pattern).
-          required:
-            - type
-            - redirectToUrl
-          properties:
-            type:
-              type: string
-              enum: [redirect_to_url]
-              description: Type of action required.
-              example: "redirect_to_url"
-            redirectToUrl:
-              type: object
-              description: Redirect details for 3DS authentication.
-              required:
-                - url
-                - method
-                - returnUrl
-              properties:
-                url:
-                  type: string
-                  format: uri
-                  description: The URL to redirect the customer to.
-                  example: "https://3ds.psp.com/challenge/abc123"
-                method:
-                  type: string
-                  enum: [GET, POST]
-                  description: HTTP method to use for the redirect.
-                  example: "POST"
-                returnUrl:
-                  type: string
-                  format: uri
-                  description: URL to return to after authentication.
-                  example: "https://merchant.example.com/checkout/3ds-return"
 
     ThreeDSValidateCaptureRequest:
       type: object
@@ -1890,14 +1923,14 @@ components:
         4. Server validates 3DS data with Payment API
         5. Server creates order if validation succeeds
 
-        **Alignment with Payment API v0.2.0:**
+        **Alignment with Payment API v0.3.0:**
         The threeDSData structure uses the phase-based discriminator model from
-        Payment API v0.2.0, specifically the "completion" phase.
+        Payment API v0.3.0, specifically the "completion" phase.
       required:
-        - authenticationId
+        - threeDSSessionId
         - threeDSData
       properties:
-        authenticationId:
+        threeDSSessionId:
           type: string
           description: |
             The authentication session ID returned in the 202 response from the
@@ -1907,7 +1940,7 @@ components:
         threeDSData:
           type: object
           description: |
-            3D Secure completion data following Payment API v0.2.0 phase-based structure.
+            3D Secure completion data following Payment API v0.3.0 phase-based structure.
             Must use the "completion" phase with authentication results.
           required:
             - phase

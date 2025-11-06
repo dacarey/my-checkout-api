@@ -201,13 +201,13 @@ export function getAuthenticationService(): IAuthenticationService {
 import { getAuthenticationService } from './services/authentication-service-factory';
 import { SessionNotFoundError } from '@dw-digital-commerce/checkout-authentication-service';
 
-async function retrieveSession(authenticationId: string): Promise<AuthenticationSession> {
+async function retrieveSession(threeDSSessionId: string): Promise<AuthenticationSession> {
   const authService = getAuthenticationService();
 
-  const session = await authService.getSession(authenticationId);
+  const session = await authService.getSession(threeDSSessionId);
 
   if (!session) {
-    throw new SessionNotFoundError(authenticationId);
+    throw new SessionNotFoundError(threeDSSessionId);
   }
 
   return session;
@@ -231,8 +231,8 @@ Based on [INTEGRATION-Payments-SDK-Mapping.md](./INTEGRATION-Payments-SDK-Mappin
 ┌─────────────────────────────────────────────────────────────────┐
 │ STEP 1: Retrieve and Validate Session                          │
 ├─────────────────────────────────────────────────────────────────┤
-│ 1.1 Extract authenticationId from request                      │
-│ 1.2 Call authService.getSession(authenticationId)              │
+│ 1.1 Extract threeDSSessionId from request                      │
+│ 1.2 Call authService.getSession(threeDSSessionId)              │
 │ 1.3 Validate session exists (not null)                         │
 │ 1.4 Validate session status === 'pending'                      │
 │ 1.5 Validate session not expired (expiresAt > now)             │
@@ -282,7 +282,7 @@ Based on [INTEGRATION-Payments-SDK-Mapping.md](./INTEGRATION-Payments-SDK-Mappin
 ┌─────────────────────────────────────────────────────────────────┐
 │ STEP 6: Mark Session as Used                                   │
 ├─────────────────────────────────────────────────────────────────┤
-│ 6.1 Call authService.markSessionUsed(authenticationId)         │
+│ 6.1 Call authService.markSessionUsed(threeDSSessionId)         │
 │ 6.2 Prevents duplicate completion attempts (single-use)        │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -299,7 +299,7 @@ Based on [INTEGRATION-Payments-SDK-Mapping.md](./INTEGRATION-Payments-SDK-Mappin
 ┌─────────────────────────────────────────────────────────────────┐
 │ STEP 8: Clean Up Session (Background Task)                     │
 ├─────────────────────────────────────────────────────────────────┤
-│ 8.1 Call authService.deleteSession(authenticationId)           │
+│ 8.1 Call authService.deleteSession(threeDSSessionId)           │
 │ 8.2 Optional: Fire-and-forget, don't block response            │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -317,7 +317,7 @@ Based on [INTEGRATION-Payments-SDK-Mapping.md](./INTEGRATION-Payments-SDK-Mappin
 /**
  * Process 3DS validate-capture request
  *
- * @param request - 3DS validation request with authenticationId and 3DS completion data
+ * @param request - 3DS validation request with threeDSSessionId and 3DS completion data
  * @param authContext - OAuth authentication context from API Gateway
  * @param brandKey - Optional brand key for /in-brand/ endpoints
  * @returns Created order
@@ -333,7 +333,7 @@ async function processValidateCapture(
 
   // STEP 1: Retrieve and Validate Session
   const session = await retrieveAndValidateSession(
-    request.authenticationId,
+    request.threeDSSessionId,
     authContext,
     brandKey
   );
@@ -360,13 +360,13 @@ async function processValidateCapture(
   );
 
   // STEP 6: Mark Session as Used
-  await markSessionAsUsed(request.authenticationId);
+  await markSessionAsUsed(request.threeDSSessionId);
 
   // STEP 7: Create Order
   const order = await createOrder(session, paymentResult);
 
   // STEP 8: Clean Up Session (fire-and-forget)
-  cleanupSession(request.authenticationId).catch(error => {
+  cleanupSession(request.threeDSSessionId).catch(error => {
     console.error('Session cleanup failed (non-critical):', error);
   });
 
@@ -380,14 +380,14 @@ async function processValidateCapture(
 
 ```typescript
 async function retrieveAndValidateSession(
-  authenticationId: string,
+  threeDSSessionId: string,
   authContext: AuthenticationContext,
   brandKey?: string
 ): Promise<AuthenticationSession> {
   const authService = getAuthenticationService();
 
   // 1.1-1.5: Retrieve session (handles existence, expiry, status checks)
-  const session = await authService.getSession(authenticationId);
+  const session = await authService.getSession(threeDSSessionId);
 
   if (!session) {
     throw new ConflictError({
@@ -606,11 +606,11 @@ async function executePaymentAuthorization(
 #### STEP 6: Mark Session as Used
 
 ```typescript
-async function markSessionAsUsed(authenticationId: string): Promise<void> {
+async function markSessionAsUsed(threeDSSessionId: string): Promise<void> {
   const authService = getAuthenticationService();
 
   try {
-    await authService.markSessionUsed(authenticationId);
+    await authService.markSessionUsed(threeDSSessionId);
   } catch (error) {
     if (error instanceof SessionAlreadyUsedError) {
       throw new ConflictError({
@@ -652,9 +652,9 @@ async function createOrder(
 #### STEP 8: Clean Up Session
 
 ```typescript
-async function cleanupSession(authenticationId: string): Promise<void> {
+async function cleanupSession(threeDSSessionId: string): Promise<void> {
   const authService = getAuthenticationService();
-  await authService.deleteSession(authenticationId);
+  await authService.deleteSession(threeDSSessionId);
 }
 ```
 
@@ -780,7 +780,7 @@ function handleError(
   console.error('Error processing validate-capture:', {
     error: error.message,
     stack: error.stack,
-    authenticationId: JSON.parse(event.body || '{}').authenticationId,
+    threeDSSessionId: JSON.parse(event.body || '{}').threeDSSessionId,
     requestId: event.requestContext.requestId
   });
 
@@ -1169,14 +1169,14 @@ async function processValidateCapture(
 
 ```typescript
 async function retrieveAndValidateSession(
-  authenticationId: string,
+  threeDSSessionId: string,
   authContext: AuthenticationContext,
   brandKey?: string
 ): Promise<AuthenticationSession> {
   const authService = getAuthenticationService();
 
   // Retrieve session (handles expiry, status)
-  const session = await authService.getSession(authenticationId);
+  const session = await authService.getSession(threeDSSessionId);
 
   if (!session) {
     throw new ConflictError('SessionNotFound', 'Authentication session not found or expired');
@@ -1279,7 +1279,7 @@ describe('Validate-Capture Handler', () => {
     // Test: Call validate-capture
     const event = createMockEvent({
       body: JSON.stringify({
-        authenticationId: session.id,
+        threeDSSessionId: session.id,
         threeDSData: {
           phase: 'completion',
           completion: {
@@ -1314,7 +1314,7 @@ describe('Validate-Capture Handler', () => {
     // Test: Customer B attempts completion
     const event = createMockEvent({
       body: JSON.stringify({
-        authenticationId: session.id,
+        threeDSSessionId: session.id,
         threeDSData: { phase: 'completion', completion: { /* ... */ } }
       }),
       claims: { sub: 'customer-B', userType: 'customer' }
@@ -1338,7 +1338,7 @@ describe('Validate-Capture Handler', () => {
     // Test: Attempt completion
     const event = createMockEvent({
       body: JSON.stringify({
-        authenticationId: session.id,
+        threeDSSessionId: session.id,
         threeDSData: { phase: 'completion', completion: { /* ... */ } }
       })
     });
@@ -1374,14 +1374,14 @@ describe('Validate-Capture Integration Tests', () => {
     });
 
     expect(captureResponse.status).toBe(202);
-    const authenticationId = captureResponse.body.authenticationId;
+    const threeDSSessionId = captureResponse.body.threeDSSessionId;
 
     // 2. Simulate customer completing 3DS challenge
     // (In real flow, customer redirected to 3DS URL and completes)
 
     // 3. Validate-capture (returns 201)
     const validateResponse = await POST('/me/3ds/validate-capture', {
-      authenticationId,
+      threeDSSessionId,
       threeDSData: {
         phase: 'completion',
         completion: {
@@ -1509,7 +1509,7 @@ npm run deploy:single:auth
 
 - [ ] **Endpoint Accessible**: Both validate-capture endpoints respond to OPTIONS
 - [ ] **Authentication Works**: Requests with valid OAuth tokens accepted
-- [ ] **Session Creation**: Initial capture returns 202 with authenticationId
+- [ ] **Session Creation**: Initial capture returns 202 with threeDSSessionId
 - [ ] **Session Retrieval**: Validate-capture can retrieve session from DynamoDB
 - [ ] **Session Ownership**: 403 returned for ownership violations
 - [ ] **Payments-SDK Integration**: Payment authorization succeeds with test data
@@ -1557,7 +1557,7 @@ fields @timestamp, @message
 ```typescript
 // From OpenAPI specification
 interface ThreeDSValidateCaptureRequest {
-  authenticationId: string;
+  threeDSSessionId: string;
   threeDSData: {
     phase: 'completion';
     completion: {

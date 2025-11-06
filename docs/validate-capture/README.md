@@ -19,7 +19,7 @@ After comprehensive industry research (Stripe, PayPal, Adyen, Checkout.com), we 
 
 - **Enhances security**: Payment tokens transmitted once, not repeated
 - **Prevents manipulation**: Cart frozen at authentication time with version validation
-- **Improves UX**: Client only tracks `authenticationId` during redirect
+- **Improves UX**: Client only tracks `threeDSSessionId` during redirect
 - **Ensures compliance**: Minimizes PCI DSS scope by reducing sensitive data exposure
 
 ### Key Components
@@ -70,7 +70,7 @@ After comprehensive industry research (Stripe, PayPal, Adyen, Checkout.com), we 
 1. Initial Capture (HTTP 202)
    └─> Create authentication session
        └─> Store: cartId, cartVersion, paymentToken, billTo, customerId/anonymousId
-       └─> Return: authenticationId, threeDSUrl
+       └─> Return: threeDSSessionId, threeDSUrl
 
 2. Customer 3DS Challenge
    └─> Customer redirected to issuer authentication page
@@ -78,7 +78,7 @@ After comprehensive industry research (Stripe, PayPal, Adyen, Checkout.com), we 
        └─> Returns to merchant with 3DS completion data
 
 3. Validate-Capture (HTTP 201)
-   └─> Retrieve session by authenticationId
+   └─> Retrieve session by threeDSSessionId
        └─> Validate: ownership, TTL, cart version
        └─> Call payments-sdk with stored context + 3DS data
        └─> Create order

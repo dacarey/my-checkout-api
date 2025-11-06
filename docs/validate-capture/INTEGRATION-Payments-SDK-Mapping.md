@@ -27,7 +27,7 @@ When the initial `/me/token/capture` call returns **HTTP 202 Accepted**, the aut
 
 ```typescript
 interface AuthenticationSession {
-  authenticationId: string;        // "auth-3169811e-fa0a-321"
+  threeDSSessionId: string;        // "auth-3169811e-fa0a-321"
   cartId: string;                  // "3169811e-fa0a-789"
   cartVersion: number;             // 1
   paymentToken: string;            // "tkn_abc123xyz" (transient token)
@@ -47,7 +47,7 @@ interface AuthenticationSession {
 
 **Step 1: Retrieve Session**
 ```typescript
-const session = await getAuthenticationSession(request.authenticationId);
+const session = await getAuthenticationSession(request.threeDSSessionId);
 
 // Validate session state
 if (session.status !== 'pending') {
@@ -104,7 +104,7 @@ const result = await paymentService.paymentAuthorisation(paymentRequest);
 ```typescript
 if (result.status === 'authorized') {
   // Mark session as used (single-use enforcement)
-  await markSessionUsed(session.authenticationId);
+  await markSessionUsed(session.threeDSSessionId);
 
   // Create order with payment result
   const order = await createOrder({
@@ -142,7 +142,7 @@ if (result.status === 'authorized') {
 ```typescript
 // Authentication session for stored payment token
 {
-  authenticationId: "auth-stored-456",
+  threeDSSessionId: "auth-stored-456",
   paymentToken: "stored_card_token_789",
   tokenType: "stored",                    // Indicates saved payment method
   customerId: "c1e2d3f4-5a6b-7c8d",      // REQUIRED for stored tokens
@@ -370,7 +370,7 @@ async function handleValidateCapture(
   // ============================================
   // STEP 1: Retrieve and Validate Session
   // ============================================
-  const session = await authenticationService.getSession(request.authenticationId);
+  const session = await authenticationService.getSession(request.threeDSSessionId);
 
   // Validate session exists
   if (!session) {
@@ -467,7 +467,7 @@ async function handleValidateCapture(
   // ============================================
   // STEP 7: Mark Session as Used
   // ============================================
-  await authenticationService.markSessionUsed(session.authenticationId);
+  await authenticationService.markSessionUsed(session.threeDSSessionId);
 
   // ============================================
   // STEP 8: Create Order
@@ -488,7 +488,7 @@ async function handleValidateCapture(
   // ============================================
   // STEP 9: Clean Up Session (Background Task)
   // ============================================
-  await authenticationService.deleteSession(session.authenticationId);
+  await authenticationService.deleteSession(session.threeDSSessionId);
 
   return order;
 }
@@ -600,7 +600,7 @@ if (currentCart.version !== session.cartVersion) {
 **Prevention:**
 ```typescript
 // Use single-use session enforcement
-const session = await authenticationService.getSession(authenticationId);
+const session = await authenticationService.getSession(threeDSSessionId);
 
 if (session.status === 'used') {
   // First request already processed this session
@@ -608,7 +608,7 @@ if (session.status === 'used') {
 }
 
 // Mark as used immediately to prevent race condition
-await authenticationService.markSessionUsed(authenticationId);
+await authenticationService.markSessionUsed(threeDSSessionId);
 ```
 
 **Database-Level Protection:**
@@ -645,14 +645,14 @@ describe('Transient Token 3DS Flow', () => {
     });
 
     expect(captureResponse.status).toBe(202);
-    const authenticationId = captureResponse.body.authenticationId;
+    const threeDSSessionId = captureResponse.body.threeDSSessionId;
 
     // Step 2: Simulate customer completing 3DS
     // (In real scenario, customer redirected to 3DS URL and completes challenge)
 
     // Step 3: Validate-capture request
     const validateResponse = await POST('/me/3ds/validate-capture', {
-      authenticationId,
+      threeDSSessionId,
       threeDSData: {
         phase: 'completion',
         completion: {
@@ -696,7 +696,7 @@ it('should handle stored token with 3DS completion', async () => {
 
   // Validate with stored token
   const validateResponse = await POST('/me/3ds/validate-capture', {
-    authenticationId: captureResponse.body.authenticationId,
+    threeDSSessionId: captureResponse.body.threeDSSessionId,
     threeDSData: {
       phase: 'completion',
       completion: { /* ... */ }
@@ -710,13 +710,13 @@ it('should handle stored token with 3DS completion', async () => {
 **Test 3: Session Expiry**
 ```typescript
 it('should reject expired session', async () => {
-  const authenticationId = 'auth-expired-123';
+  const threeDSSessionId = 'auth-expired-123';
 
   // Simulate expired session (created 31 minutes ago)
-  await createExpiredSession(authenticationId, { ttl: -60 });
+  await createExpiredSession(threeDSSessionId, { ttl: -60 });
 
   const response = await POST('/me/3ds/validate-capture', {
-    authenticationId,
+    threeDSSessionId,
     threeDSData: { phase: 'completion', completion: { /* ... */ } }
   });
 
@@ -729,7 +729,7 @@ it('should reject expired session', async () => {
 ```typescript
 it('should reject if cart was modified during 3DS', async () => {
   // Create session with cart version 1
-  const authenticationId = await createAuthenticationSession({
+  const threeDSSessionId = await createAuthenticationSession({
     cartId: 'cart-789',
     cartVersion: 1
   });
@@ -738,7 +738,7 @@ it('should reject if cart was modified during 3DS', async () => {
   await updateCart('cart-789', { version: 2 });
 
   const response = await POST('/me/3ds/validate-capture', {
-    authenticationId,
+    threeDSSessionId,
     threeDSData: { phase: 'completion', completion: { /* ... */ } }
   });
 

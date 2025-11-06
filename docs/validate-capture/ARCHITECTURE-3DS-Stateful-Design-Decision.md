@@ -11,7 +11,7 @@
 
 This report analyzes the architectural design of 3D Secure (3DS) authentication flows in the Direct Wines Checkout API, specifically addressing whether the API should follow a stateless REST pattern or use controlled server-side session state for authentication workflows.
 
-**Key Finding:** After comprehensive research of industry-leading payment providers (Stripe, PayPal, Adyen, Checkout.com), we confirm that **stateful session management is the industry-standard pattern for 3DS authentication flows**, and the current Checkout API design with `authenticationId` is architecturally sound.
+**Key Finding:** After comprehensive research of industry-leading payment providers (Stripe, PayPal, Adyen, Checkout.com), we confirm that **stateful session management is the industry-standard pattern for 3DS authentication flows**, and the current Checkout API design with `threeDSSessionId` is architecturally sound.
 
 ---
 
@@ -23,18 +23,18 @@ The Checkout API v0.5.0 introduces two new endpoints for completing 3DS authenti
 
 ### Initial Design Concern
 
-The proposed request payload uses an `authenticationId` to reference a server-side session:
+The proposed request payload uses an `threeDSSessionId` to reference a server-side session:
 
 ```yaml
 ThreeDSValidateCaptureRequest:
   required:
-    - authenticationId  # References server-side session
+    - threeDSSessionId  # References server-side session
     - threeDSData       # 3DS completion data
 ```
 
 **Concern Raised:** If the initial `/me/token/capture` call returns HTTP 202 (authentication required), no order is created. In a **stateless REST API** design, the server should not maintain session state. This implies the client must resubmit the complete `CheckoutDraft` payload (cart details, payment token, billing/shipping information) along with the 3DS completion data.
 
-**Critical Question:** Does the session-based design (`authenticationId`) violate stateless REST principles, or is it the correct architectural pattern for 3DS authentication flows?
+**Critical Question:** Does the session-based design (`threeDSSessionId`) violate stateless REST principles, or is it the correct architectural pattern for 3DS authentication flows?
 
 ---
 
@@ -350,7 +350,7 @@ Use the session identifier (`sid_abc123`) to authorize payment after 3DS complet
 - Risk of data loss during redirect flow
 
 **Stateful Solution:**
-- Client only needs to track `authenticationId`
+- Client only needs to track `threeDSSessionId`
 - Simple redirect flow without data preservation burden
 - Seamless user experience
 
@@ -378,10 +378,10 @@ The proposed `ThreeDSValidateCaptureRequest` schema aligns with industry best pr
 ThreeDSValidateCaptureRequest:
   type: object
   required:
-    - authenticationId  # Session identifier (industry standard)
+    - threeDSSessionId  # Session identifier (industry standard)
     - threeDSData       # Only 3DS completion data
   properties:
-    authenticationId:
+    threeDSSessionId:
       type: string
       description: Authentication session ID from initial 202 response
     threeDSData:
@@ -416,7 +416,7 @@ When `/me/token/capture` returns **HTTP 202 Accepted**, create authentication se
 
 ```typescript
 interface AuthenticationSession {
-  id: string;                    // authenticationId
+  id: string;                    // threeDSSessionId
   cartId: string;                // Original cart reference
   cartVersion: number;           // Cart version at capture time
   paymentToken: string;          // Payment token (encrypted)
@@ -472,7 +472,7 @@ const session = await createAuthenticationSession({
 
 **Retrieval & Validation:**
 ```typescript
-const session = await getAuthenticationSession(authenticationId);
+const session = await getAuthenticationSession(threeDSSessionId);
 
 if (!session) {
   throw new ConflictError('Authentication session not found');
@@ -512,7 +512,7 @@ if (currentCart.version !== session.cartVersion) {
 **Completion:**
 ```typescript
 // Mark session as used (single-use)
-await markSessionUsed(authenticationId);
+await markSessionUsed(threeDSSessionId);
 
 // Create order using stored session data
 const order = await createOrder({
@@ -525,7 +525,7 @@ const order = await createOrder({
 });
 
 // Clean up session data
-await deleteAuthenticationSession(authenticationId);
+await deleteAuthenticationSession(threeDSSessionId);
 ```
 
 #### 3. Storage Recommendations
@@ -591,7 +591,7 @@ await deleteAuthenticationSession(authenticationId);
 
 #### 6. Session Ownership Validation
 
-Session ownership validation ensures that only the customer (authenticated or anonymous) who created the authentication session can complete it. This prevents session hijacking attacks where an attacker obtains an `authenticationId` but cannot complete the transaction without the original customer's OAuth token.
+Session ownership validation ensures that only the customer (authenticated or anonymous) who created the authentication session can complete it. This prevents session hijacking attacks where an attacker obtains an `threeDSSessionId` but cannot complete the transaction without the original customer's OAuth token.
 
 **Implementation Pattern:**
 
@@ -811,7 +811,7 @@ This hybrid approach is the **de facto industry standard** as evidenced by Strip
 
 ### 1. Proceed with Current Stateful Design ✅
 
-The proposed `/me/3ds/validate-capture` and `/in-brand/{brandkey}/3ds/validate-capture` endpoints with `authenticationId` parameter are **architecturally sound** and follow **industry best practices**.
+The proposed `/me/3ds/validate-capture` and `/in-brand/{brandkey}/3ds/validate-capture` endpoints with `threeDSSessionId` parameter are **architecturally sound** and follow **industry best practices**.
 
 **No changes required to OpenAPI specification.**
 
@@ -861,7 +861,7 @@ Enhance OpenAPI documentation to clarify:
 After comprehensive research of industry-leading payment providers, we conclude that:
 
 1. **Stateful session management for 3DS authentication is the universal industry standard**
-2. **The proposed Checkout API design with `authenticationId` is correct and secure**
+2. **The proposed Checkout API design with `threeDSSessionId` is correct and secure**
 3. **Pure stateless design would introduce critical security, compliance, and integrity risks**
 4. **Controlled, temporary session state for authentication workflows is an accepted REST pattern**
 

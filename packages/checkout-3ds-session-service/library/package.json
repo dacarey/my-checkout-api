@@ -1,0 +1,57 @@
+{
+  "name": "@dw-digital-commerce/checkout-3ds-session-service",
+  "version": "1.0.0",
+  "description": "3DS session management library for Direct Wines Checkout API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./dynamodb": {
+      "import": "./dist/providers/dynamodb/index.js",
+      "require": "./dist/providers/dynamodb/index.js",
+      "types": "./dist/providers/dynamodb/index.d.ts"
+    },
+    "./mock": {
+      "import": "./dist/providers/mock/index.js",
+      "require": "./dist/providers/mock/index.js",
+      "types": "./dist/providers/mock/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "keywords": [
+    "checkout",
+    "3ds",
+    "3d-secure",
+    "payment-sessions",
+    "session-management",
+    "direct-wines"
+  ],
+  "author": "Direct Wines Digital Commerce Team",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.709.0",
+    "@aws-sdk/lib-dynamodb": "^3.709.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

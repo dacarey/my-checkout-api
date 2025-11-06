@@ -1,0 +1,38 @@
+{
+  "name": "my-checkout-api-examples",
+  "version": "0.5.0",
+  "description": "Node.js examples and comprehensive testing suite for My Checkout API",
+  "main": "dist/runner.js",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "start": "npm run build && node dist/runner.js",
+    "dev": "ts-node src/runner.ts",
+    "test": "npm run build && node dist/runner.js",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "checkout",
+    "api",
+    "examples",
+    "testing",
+    "3ds",
+    "tokens"
+  ],
+  "author": "DW Digital Commerce",
+  "license": "ISC",
+  "dependencies": {
+    "@dw-digital-commerce/payments-sdk": "5.0.0",
+    "axios": "^1.6.8",
+    "chalk": "^4.1.2",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

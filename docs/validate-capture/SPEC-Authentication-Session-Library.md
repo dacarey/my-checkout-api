@@ -254,7 +254,7 @@ interface IAuthenticationService {
   /**
    * Retrieve an authentication session by ID
    *
-   * @param authenticationId - Session identifier
+   * @param threeDSSessionId - Session identifier
    * @returns Session if found and not expired, null otherwise
    * @throws {ServiceError} If retrieval fails due to service error
    *
@@ -264,12 +264,12 @@ interface IAuthenticationService {
    *   throw new ConflictError('Session not found or expired');
    * }
    */
-  getSession(authenticationId: string): Promise<AuthenticationSession | null>;
+  getSession(threeDSSessionId: string): Promise<AuthenticationSession | null>;
 
   /**
    * Mark a session as used (single-use enforcement)
    *
-   * @param authenticationId - Session identifier
+   * @param threeDSSessionId - Session identifier
    * @throws {SessionAlreadyUsedError} If session is already used
    * @throws {SessionNotFoundError} If session doesn't exist
    * @throws {ServiceError} If update fails due to service error
@@ -277,19 +277,19 @@ interface IAuthenticationService {
    * @example
    * await service.markSessionUsed('auth_abc123');
    */
-  markSessionUsed(authenticationId: string): Promise<void>;
+  markSessionUsed(threeDSSessionId: string): Promise<void>;
 
   /**
    * Delete a session (cleanup after order creation)
    *
-   * @param authenticationId - Session identifier
+   * @param threeDSSessionId - Session identifier
    * @returns true if deleted, false if not found
    * @throws {ServiceError} If deletion fails due to service error
    *
    * @example
    * await service.deleteSession('auth_abc123');
    */
-  deleteSession(authenticationId: string): Promise<boolean>;
+  deleteSession(threeDSSessionId: string): Promise<boolean>;
 
   /**
    * Health check for the storage provider
@@ -376,9 +376,9 @@ class AuthenticationServiceError extends Error {
  * Maps to HTTP 409 Conflict in API responses
  */
 class SessionNotFoundError extends AuthenticationServiceError {
-  constructor(authenticationId: string, cause?: Error) {
+  constructor(threeDSSessionId: string, cause?: Error) {
     super(
-      `Authentication session not found or expired: ${authenticationId}`,
+      `Authentication session not found or expired: ${threeDSSessionId}`,
       'SESSION_NOT_FOUND',
       409,
       cause
@@ -392,9 +392,9 @@ class SessionNotFoundError extends AuthenticationServiceError {
  * Maps to HTTP 409 Conflict in API responses
  */
 class SessionAlreadyUsedError extends AuthenticationServiceError {
-  constructor(authenticationId: string) {
+  constructor(threeDSSessionId: string) {
     super(
-      `Authentication session already used: ${authenticationId}`,
+      `Authentication session already used: ${threeDSSessionId}`,
       'SESSION_ALREADY_USED',
       409
     );
@@ -407,9 +407,9 @@ class SessionAlreadyUsedError extends AuthenticationServiceError {
  * Maps to HTTP 409 Conflict in API responses
  */
 class SessionExpiredError extends AuthenticationServiceError {
-  constructor(authenticationId: string, expiresAt: string) {
+  constructor(threeDSSessionId: string, expiresAt: string) {
     super(
-      `Authentication session expired at ${expiresAt}: ${authenticationId}`,
+      `Authentication session expired at ${expiresAt}: ${threeDSSessionId}`,
       'SESSION_EXPIRED',
       409
     );
@@ -455,7 +455,7 @@ The DynamoDB provider is the **primary production implementation**, chosen for:
 Example: `dev-checkout-authentication-sessions`, `prod-checkout-authentication-sessions`
 
 **Primary Key:**
-- **Partition Key:** `authenticationId` (String)
+- **Partition Key:** `threeDSSessionId` (String)
   - Format: `auth_{timestamp}_{randomString}`
   - Example: `auth_1730649600_abc123xyz`
   - High cardinality ensures even distribution across partitions
@@ -466,7 +466,7 @@ Example: `dev-checkout-authentication-sessions`, `prod-checkout-authentication-s
 ```typescript
 {
   // Primary Key
-  authenticationId: string;        // Partition key
+  threeDSSessionId: string;        // Partition key
 
   // Session Data (all required)
   cartId: string;
@@ -560,12 +560,12 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 async createSession(request: CreateSessionRequest): Promise<AuthenticationSession> {
-  const authenticationId = generateAuthenticationId();
+  const threeDSSessionId = generateAuthenticationId();
   const createdAt = new Date();
   const expiresAt = new Date(createdAt.getTime() + 30 * 60 * 1000);
 
   const item = {
-    authenticationId,
+    threeDSSessionId,
     cartId: request.cartId,
     cartVersion: request.cartVersion,
     paymentToken: request.paymentToken, // Stored directly, protected by DynamoDB table encryption
@@ -594,10 +594,10 @@ async createSession(request: CreateSessionRequest): Promise<AuthenticationSessio
 ```typescript
 import { GetCommand } from '@aws-sdk/lib-dynamodb';
 
-async getSession(authenticationId: string): Promise<AuthenticationSession | null> {
+async getSession(threeDSSessionId: string): Promise<AuthenticationSession | null> {
   const result = await this.docClient.send(new GetCommand({
     TableName: this.tableName,
-    Key: { authenticationId }
+    Key: { threeDSSessionId }
   }));
 
   if (!result.Item) {
@@ -608,7 +608,7 @@ async getSession(authenticationId: string): Promise<AuthenticationSession | null
   const expiresAt = new Date(result.Item.expiresAt);
   if (expiresAt < new Date()) {
     // Session expired - optionally delete immediately
-    await this.deleteSession(authenticationId);
+    await this.deleteSession(threeDSSessionId);
     return null;
   }
 
@@ -625,11 +625,11 @@ async getSession(authenticationId: string): Promise<AuthenticationSession | null
 ```typescript
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
-async markSessionUsed(authenticationId: string): Promise<void> {
+async markSessionUsed(threeDSSessionId: string): Promise<void> {
   try {
     await this.docClient.send(new UpdateCommand({
       TableName: this.tableName,
-      Key: { authenticationId },
+      Key: { threeDSSessionId },
       UpdateExpression: 'SET #status = :used',
       ConditionExpression: '#status = :pending',
       ExpressionAttributeNames: {
@@ -642,7 +642,7 @@ async markSessionUsed(authenticationId: string): Promise<void> {
     }));
   } catch (error: any) {
     if (error.name === 'ConditionalCheckFailedException') {
-      throw new SessionAlreadyUsedError(authenticationId);
+      throw new SessionAlreadyUsedError(threeDSSessionId);
     }
     throw new StorageServiceError('Failed to mark session as used', error);
   }
@@ -736,12 +736,12 @@ class MockAuthenticationService implements IAuthenticationService {
   }
 
   async createSession(request: CreateSessionRequest): Promise<AuthenticationSession> {
-    const authenticationId = this.generateAuthenticationId();
+    const threeDSSessionId = this.generateAuthenticationId();
     const createdAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
     const session: AuthenticationSession = {
-      id: authenticationId,
+      id: threeDSSessionId,
       cartId: request.cartId,
       cartVersion: request.cartVersion,
       paymentToken: request.paymentToken, // NOT encrypted in mock
@@ -756,12 +756,12 @@ class MockAuthenticationService implements IAuthenticationService {
       anonymousId: request.anonymousId
     };
 
-    this.sessions.set(authenticationId, session);
+    this.sessions.set(threeDSSessionId, session);
     return session;
   }
 
-  async getSession(authenticationId: string): Promise<AuthenticationSession | null> {
-    const session = this.sessions.get(authenticationId);
+  async getSession(threeDSSessionId: string): Promise<AuthenticationSession | null> {
+    const session = this.sessions.get(threeDSSessionId);
 
     if (!session) {
       return null;
@@ -769,7 +769,7 @@ class MockAuthenticationService implements IAuthenticationService {
 
     // Check expiration
     if (new Date(session.expiresAt) < new Date()) {
-      this.sessions.delete(authenticationId);
+      this.sessions.delete(threeDSSessionId);
       return null;
     }
 
@@ -781,26 +781,26 @@ class MockAuthenticationService implements IAuthenticationService {
     return session;
   }
 
-  async markSessionUsed(authenticationId: string): Promise<void> {
-    const session = this.sessions.get(authenticationId);
+  async markSessionUsed(threeDSSessionId: string): Promise<void> {
+    const session = this.sessions.get(threeDSSessionId);
 
     if (!session) {
-      throw new SessionNotFoundError(authenticationId);
+      throw new SessionNotFoundError(threeDSSessionId);
     }
 
     if (session.status === 'used') {
-      throw new SessionAlreadyUsedError(authenticationId);
+      throw new SessionAlreadyUsedError(threeDSSessionId);
     }
 
     // Create updated session (immutability)
-    this.sessions.set(authenticationId, {
+    this.sessions.set(threeDSSessionId, {
       ...session,
       status: 'used'
     });
   }
 
-  async deleteSession(authenticationId: string): Promise<boolean> {
-    return this.sessions.delete(authenticationId);
+  async deleteSession(threeDSSessionId: string): Promise<boolean> {
+    return this.sessions.delete(threeDSSessionId);
   }
 
   async healthCheck(): Promise<boolean> {
@@ -980,7 +980,7 @@ async function handleCaptureOrder(event: APIGatewayProxyEvent): Promise<APIGatew
       statusCode: 202,
       headers: getCorsHeaders(),
       body: JSON.stringify({
-        authenticationId: session.id,
+        threeDSSessionId: session.id,
         cartId: session.cartId,
         threeDSUrl: 'https://3ds.psp.com/challenge/...',
         nextAction: 'complete_3ds_authentication'
@@ -1007,7 +1007,7 @@ async function handle3DSValidateCapture(event: APIGatewayProxyEvent): Promise<AP
 
   try {
     // Retrieve authentication session
-    const session = await authService.getSession(request.authenticationId);
+    const session = await authService.getSession(request.threeDSSessionId);
 
     if (!session) {
       return {
@@ -1034,13 +1034,13 @@ async function handle3DSValidateCapture(event: APIGatewayProxyEvent): Promise<AP
     }
 
     // Mark session as used (prevents replay attacks)
-    await authService.markSessionUsed(request.authenticationId);
+    await authService.markSessionUsed(request.threeDSSessionId);
 
     // Create order using session data + 3DS completion data
     const order = await createOrderWithSession(session, request.threeDSData);
 
     // Clean up session after successful order creation
-    await authService.deleteSession(request.authenticationId);
+    await authService.deleteSession(request.threeDSSessionId);
 
     return {
       statusCode: 201,
@@ -1126,7 +1126,7 @@ async function handleRequest(event: APIGatewayProxyEvent): Promise<APIGatewayPro
   const authService = getAuthenticationService();
 
   const session = await withRetry(async () => {
-    return await authService.getSession(authenticationId);
+    return await authService.getSession(threeDSSessionId);
   });
 
   // ... rest of handler
@@ -1183,7 +1183,7 @@ export class AuthenticationSessionStack extends Stack {
     this.table = new dynamodb.Table(this, 'AuthSessionTable', {
       tableName,
       partitionKey: {
-        name: 'authenticationId',
+        name: 'threeDSSessionId',
         type: dynamodb.AttributeType.STRING
       },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // On-demand
@@ -1708,7 +1708,7 @@ import {
 } from '@dw-digital-commerce/checkout-authentication-service';
 
 try {
-  await service.markSessionUsed(authenticationId);
+  await service.markSessionUsed(threeDSSessionId);
 } catch (error) {
   if (error instanceof SessionNotFoundError) {
     // Return 409 Conflict
@@ -1742,7 +1742,7 @@ try {
 
 ### 9.2 Session Ownership Validation
 
-Session ownership validation ensures that only the principal (authenticated customer or anonymous user) who created the authentication session can complete it. This prevents session hijacking where an attacker obtains an `authenticationId` but cannot complete the transaction without the original principal's OAuth token.
+Session ownership validation ensures that only the principal (authenticated customer or anonymous user) who created the authentication session can complete it. This prevents session hijacking where an attacker obtains an `threeDSSessionId` but cannot complete the transaction without the original principal's OAuth token.
 
 **Authenticated vs. Guest Users:**
 
@@ -1823,7 +1823,7 @@ async function handle3DSValidateCapture(event: APIGatewayProxyEvent): Promise<AP
   const authService = getAuthenticationService();
 
   // Retrieve session
-  const session = await authService.getSession(request.authenticationId);
+  const session = await authService.getSession(request.threeDSSessionId);
   if (!session) {
     return { statusCode: 409, body: JSON.stringify({ code: 'SESSION_NOT_FOUND' }) };
   }
@@ -1832,7 +1832,7 @@ async function handle3DSValidateCapture(event: APIGatewayProxyEvent): Promise<AP
   await validateSessionOwnership(session, event);
 
   // Continue with session processing...
-  await authService.markSessionUsed(request.authenticationId);
+  await authService.markSessionUsed(request.threeDSSessionId);
   const order = await createOrder(session, request.threeDSData);
 
   return { statusCode: 201, body: JSON.stringify(order) };
@@ -1853,7 +1853,7 @@ function logAuditEvent(
   console.log(JSON.stringify({
     timestamp: new Date().toISOString(),
     event,
-    authenticationId: session.id,
+    threeDSSessionId: session.id,
     cartId: session.cartId,
     cartVersion: session.cartVersion,
     customerId: session.customerId,

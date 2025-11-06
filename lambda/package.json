@@ -6,6 +6,11 @@
   "scripts": {
     "build": "tsc"
   },
+  "dependencies": {
+    "@dw-digital-commerce/payments-sdk": "^5.0.0",
+    "@dw-digital-commerce/checkout-3ds-session-service": "1.0.0",
+    "@aws-sdk/client-secrets-manager": "^3.0.0"
+  },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.156",
     "@types/node": "^22.18.8",

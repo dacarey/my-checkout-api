@@ -13,6 +13,8 @@ export interface ServiceConfig {
   serviceAccountId: string;
   /** Function name prefix for resource naming */
   functionNamePrefix: string;
+  /** Default brand key for payment processing */
+  brandKey: string;
 }
 
 export function getServiceConfig(app: cdk.App): ServiceConfig {
@@ -26,7 +28,8 @@ export function getServiceConfig(app: cdk.App): ServiceConfig {
                   process.env.CDK_DEFAULT_ACCOUNT || 'ACCOUNT_PLACEHOLDER',
     serviceAccountId: app.node.tryGetContext('serviceAccountId') || process.env.SERVICE_ACCOUNT_ID ||
                      process.env.CDK_DEFAULT_ACCOUNT || 'ACCOUNT_PLACEHOLDER',
-    functionNamePrefix: app.node.tryGetContext('functionNamePrefix') || process.env.FUNCTION_NAME_PREFIX || 'checkout'
+    functionNamePrefix: app.node.tryGetContext('functionNamePrefix') || process.env.FUNCTION_NAME_PREFIX || 'checkout',
+    brandKey: app.node.tryGetContext('brandKey') || process.env.BRAND_KEY || 'uklait'
   };
 
   // Validation

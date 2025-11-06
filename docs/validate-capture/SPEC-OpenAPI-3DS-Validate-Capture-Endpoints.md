@@ -61,7 +61,7 @@ examples:
   successful-3ds-completion:
     summary: Successful 3DS authentication completion
     value:
-      authenticationId: "auth-3169811e-fa0a-321"
+      threeDSSessionId: "auth-3169811e-fa0a-321"
       threeDSData:
         phase: "completion"
         completion:
@@ -122,10 +122,10 @@ ThreeDSValidateCaptureRequest:
     Request to complete order creation after successful 3D Secure authentication.
     Aligned with Payment API v0.2.0 phase-based discriminator model.
   required:
-    - authenticationId
+    - threeDSSessionId
     - threeDSData
   properties:
-    authenticationId:
+    threeDSSessionId:
       type: string
       description: Authentication session ID from 202 response
       example: "auth-3169811e-fa0a-321"
@@ -179,14 +179,14 @@ ThreeDSValidateCaptureRequest:
 ThreeDSAuthenticationRequired:
   type: object
   required:
-    - authenticationId      # ✅ Session identifier
+    - threeDSSessionId      # ✅ Session identifier
     - cartId                # ✅ Original cart reference
     - threeDSUrl            # ✅ Challenge URL
     - transactionId         # ✅ Processor transaction ID
     - paymentContext        # ✅ Payment details
     - nextAction            # ✅ Redirect instructions
   properties:
-    authenticationId:
+    threeDSSessionId:
       type: string
       example: "auth-3169811e-fa0a-321"
     nextAction:
@@ -213,7 +213,7 @@ ThreeDSAuthenticationRequired:
 #### ✅ Validation: COMPLETE
 
 All fields from technical report Section 4 (Session Data Completeness) are present:
-- ✅ `authenticationId` - Unique session identifier
+- ✅ `threeDSSessionId` - Unique session identifier
 - ✅ `cartId` - Original cart reference
 - ✅ `threeDSUrl` - Challenge URL for customer redirect
 - ✅ `transactionId` - Processor transaction tracking
@@ -233,7 +233,7 @@ All fields from technical report Section 4 (Session Data Completeness) are prese
 
 The technical report documents session ownership validation as a critical security requirement:
 
-> "Session ownership validation ensures that only the customer (authenticated or anonymous) who created the authentication session can complete it. This prevents session hijacking attacks where an attacker obtains an `authenticationId` but cannot complete the transaction without the original customer's OAuth token."
+> "Session ownership validation ensures that only the customer (authenticated or anonymous) who created the authentication session can complete it. This prevents session hijacking attacks where an attacker obtains an `threeDSSessionId` but cannot complete the transaction without the original customer's OAuth token."
 
 However, the current OpenAPI specification **does not include an HTTP 403 response** for ownership validation failures. The 409 Conflict response covers session state issues (not found, used, expired) but not authorization failures.
 
@@ -334,14 +334,14 @@ Add a note about session ownership in the 202 response description:
     3D Secure authentication required - order pending customer action
 
     **Session Creation:**
-    An authentication session is created server-side with a unique `authenticationId`.
+    An authentication session is created server-side with a unique `threeDSSessionId`.
     This session is bound to the OAuth token's principal (customerId for authenticated
     users, anonymousId for guest users) and can only be completed by the same principal.
 
     **Session Lifetime:** 30 minutes (expires if 3DS not completed within window)
     **Session Usage:** Single-use (cannot be reused after completion)
 
-    Use the `/3ds/validate-capture` endpoint with the `authenticationId` and 3DS
+    Use the `/3ds/validate-capture` endpoint with the `threeDSSessionId` and 3DS
     completion data to finalize the order.
 ```
 
@@ -455,13 +455,13 @@ const sessionA = await POST('/me/token/capture', {
   headers: { Authorization: 'Bearer <customer_a_token>' },
   body: checkoutDraft
 });
-const authenticationId = sessionA.body.authenticationId;
+const threeDSSessionId = sessionA.body.threeDSSessionId;
 
 // Test: Customer B attempts completion
 const response = await POST('/me/3ds/validate-capture', {
   headers: { Authorization: 'Bearer <customer_b_token>' },
   body: {
-    authenticationId,
+    threeDSSessionId,
     threeDSData: { phase: 'completion', completion: {...} }
   }
 });
@@ -479,13 +479,13 @@ const sessionGuest = await POST('/me/token/capture', {
   headers: { Authorization: 'Bearer <anonymous_token>' },
   body: checkoutDraft
 });
-const authenticationId = sessionGuest.body.authenticationId;
+const threeDSSessionId = sessionGuest.body.threeDSSessionId;
 
 // Test: Authenticated user attempts completion
 const response = await POST('/me/3ds/validate-capture', {
   headers: { Authorization: 'Bearer <authenticated_token>' },
   body: {
-    authenticationId,
+    threeDSSessionId,
     threeDSData: { phase: 'completion', completion: {...} }
   }
 });
@@ -502,13 +502,13 @@ const sessionUK = await POST('/in-brand/uklait/token/capture', {
   headers: { Authorization: 'Bearer <service_token>' },
   body: checkoutDraft
 });
-const authenticationId = sessionUK.body.authenticationId;
+const threeDSSessionId = sessionUK.body.threeDSSessionId;
 
 // Test: Attempt completion in brand 'us4s'
 const response = await POST('/in-brand/us4s/3ds/validate-capture', {
   headers: { Authorization: 'Bearer <service_token>' },
   body: {
-    authenticationId,
+    threeDSSessionId,
     threeDSData: { phase: 'completion', completion: {...} }
   }
 });
@@ -532,7 +532,7 @@ expect(response.body.errors[0].message).toContain('brand context');
 
 ```
 ThreeDSValidateCaptureRequest
-├── authenticationId: string (required)
+├── threeDSSessionId: string (required)
 └── threeDSData: object (required)
     ├── phase: "completion" (required, enum)
     └── completion: object (required)
@@ -565,7 +565,7 @@ Order
 #### 202 Accepted - 3DS Required (Initial Capture)
 ```
 ThreeDSAuthenticationRequired
-├── authenticationId: string (session ID)
+├── threeDSSessionId: string (session ID)
 ├── cartId: string
 ├── threeDSUrl: string (challenge URL)
 ├── transactionId: string

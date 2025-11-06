@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Test script for Checkout API Mock Service using xh
-# Usage: ./test-checkout-api.sh [API_GATEWAY_URL]
+# Test script for Checkout API - Runs examples from examples/ directory
+# Usage: ./test-checkout-api.sh [OPTIONS]
 
 set -e
 
@@ -12,236 +12,167 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# API Gateway URL (can be passed as argument or set as environment variable)
-API_URL="${1:-${API_GATEWAY_URL:-https://kcemzg9bxh.execute-api.eu-west-1.amazonaws.com/dev}}"
+# Default values
+VERBOSE=""
+EXAMPLE=""
+API_ID=""
+BRAND_KEY=""
+REGION=""
 
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}Checkout API Mock Service Test Suite${NC}"
-echo -e "${BLUE}========================================${NC}"
-echo -e "API URL: ${YELLOW}${API_URL}${NC}\n"
-
-# Function to print test header
-print_test() {
-    echo -e "\n${GREEN}>>> TEST: $1${NC}"
-    echo -e "${YELLOW}$2${NC}\n"
+# Function to print usage
+print_usage() {
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${BLUE}Checkout API Test Suite${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo ""
+    echo "Usage: ./test-checkout-api.sh [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --api-id <id>       API Gateway ID (auto-loaded from .api-deployment.lock if available)"
+    echo "  --brand-key <key>   Brand key (default: uklait)"
+    echo "  --region <region>   AWS region (default: eu-west-1)"
+    echo "  --example <name>    Run specific example (e.g., token-capture)"
+    echo "  --verbose, -v       Verbose output"
+    echo "  --help, -h          Show this help message"
+    echo ""
+    echo "Environment Variables:"
+    echo "  API_ID              API Gateway ID"
+    echo "  CHECKOUT_API_ID     Alternative API Gateway ID"
+    echo "  BRAND_KEY           Brand key"
+    echo "  AWS_REGION          AWS region"
+    echo ""
+    echo "Examples:"
+    echo "  ./test-checkout-api.sh                                  # Uses .api-deployment.lock"
+    echo "  ./test-checkout-api.sh --api-id abc123xyz9              # Override with API ID"
+    echo "  ./test-checkout-api.sh --example token-capture -v       # Run specific example with verbose output"
+    echo "  API_ID=abc123xyz9 ./test-checkout-api.sh                # Environment variable"
+    echo ""
 }
 
-# Function to generate unique idempotency key
-generate_idempotency_key() {
-    echo "TEST-$(date +%s)-$(uuidgen | cut -d'-' -f1)"
-}
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --api-id)
+            API_ID="$2"
+            shift 2
+            ;;
+        --brand-key|--brand)
+            BRAND_KEY="$2"
+            shift 2
+            ;;
+        --region)
+            REGION="$2"
+            shift 2
+            ;;
+        --example|-e)
+            EXAMPLE="$2"
+            shift 2
+            ;;
+        --verbose|-v)
+            VERBOSE="--verbose"
+            shift
+            ;;
+        --help|-h)
+            print_usage
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}"
+            print_usage
+            exit 1
+            ;;
+    esac
+done
 
-# Test 1: Single tokenised payment - COMPLETED order
-print_test "Single Tokenised Payment" "POST /me/token/capture (Single credit card - amount < 150)"
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}Checkout API Test Suite${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
 
-echo '{
-    "cartId": "test-cart-123",
-    "version": 1,
-    "payments": [
-        {
-            "type": "tokenised",
-            "amount": {"amount": 49.99, "currencyCode": "GBP"},
-            "tokenisedPayment": {
-                "paymentToken": "tkn_abc123xyz",
-                "tokenType": "transient",
-                "billTo": {
-                    "firstName": "John",
-                    "lastName": "Doe",
-                    "email": "john.doe@example.com",
-                    "address": {
-                        "address1": "123 Main Street",
-                        "locality": "London",
-                        "postalCode": "SW1A 1AA",
-                        "country": "GB"
-                    }
-                }
-            }
+# Check if .api-deployment.lock exists
+LOCK_FILE=".api-deployment.lock"
+if [ -f "$LOCK_FILE" ] && [ -z "$API_ID" ]; then
+    echo -e "${GREEN}✅ Found deployment lock file${NC}"
+    LOCK_API_ID=$(node -e "
+        const fs = require('fs');
+        try {
+            const lock = JSON.parse(fs.readFileSync('$LOCK_FILE', 'utf-8'));
+            console.log(lock.apiId || '');
+        } catch (e) {
+            console.log('');
         }
-    ]
-}' | xh POST "${API_URL}/me/token/capture" \
-    Content-Type:application/json \
-    Idempotency-Key:"$(generate_idempotency_key)"
+    " 2>/dev/null)
 
-# Test 2: Mixed payment methods - Gift voucher + credit card
-print_test "Mixed Payment Methods" "POST /me/token/capture (Gift voucher + credit card)"
+    if [ -n "$LOCK_API_ID" ]; then
+        API_ID="$LOCK_API_ID"
+        echo -e "${YELLOW}Using API ID from lock file: ${API_ID}${NC}"
+    fi
+fi
 
-echo '{
-    "cartId": "test-cart-456",
-    "version": 1,
-    "payments": [
-        {
-            "type": "stored",
-            "amount": {"amount": 20.00, "currencyCode": "GBP"},
-            "storedPayment": {
-                "paymentMethod": "giftvoucher",
-                "giftVoucherDetails": {
-                    "voucherCode": "GV-2024-ABC123",
-                    "pin": "1234"
-                }
-            }
-        },
-        {
-            "type": "tokenised",
-            "amount": {"amount": 29.99, "currencyCode": "GBP"},
-            "tokenisedPayment": {
-                "paymentToken": "tkn_xyz789def",
-                "tokenType": "transient",
-                "billTo": {
-                    "firstName": "Jane",
-                    "lastName": "Smith",
-                    "email": "jane.smith@example.com",
-                    "address": {
-                        "address1": "456 High Street",
-                        "locality": "Manchester",
-                        "postalCode": "M1 1AA",
-                        "country": "GB"
-                    }
-                }
-            }
-        }
-    ]
-}' | xh POST "${API_URL}/me/token/capture" \
-    Content-Type:application/json \
-    Idempotency-Key:"$(generate_idempotency_key)"
+# Check if examples directory exists
+if [ ! -d "examples" ]; then
+    echo -e "${RED}❌ Error: examples/ directory not found${NC}"
+    echo "Make sure you're running this script from the project root"
+    exit 1
+fi
 
-# Test 3: 3DS required scenario (amount > 150)
-print_test "3DS Required Scenario" "POST /me/token/capture (Amount > 150 triggers 3DS)"
+# Change to examples directory
+cd examples
 
-echo '{
-    "cartId": "test-cart-3ds",
-    "version": 1,
-    "payments": [
-        {
-            "type": "tokenised",
-            "amount": {"amount": 159.99, "currencyCode": "EUR"},
-            "tokenisedPayment": {
-                "paymentToken": "tkn_3ds_test",
-                "tokenType": "transient",
-                "billTo": {
-                    "firstName": "Michael",
-                    "lastName": "Johnson",
-                    "email": "michael.johnson@example.com",
-                    "address": {
-                        "address1": "789 Park Avenue",
-                        "locality": "Dublin",
-                        "postalCode": "D02 1AA",
-                        "country": "IE"
-                    }
-                }
-            }
-        }
-    ]
-}' | xh POST "${API_URL}/me/token/capture" \
-    Content-Type:application/json \
-    Idempotency-Key:"$(generate_idempotency_key)"
+# Check if dependencies are installed
+if [ ! -d "node_modules" ]; then
+    echo -e "${YELLOW}📦 Installing example dependencies...${NC}"
+    npm ci --ignore-scripts
+    echo ""
+fi
 
-# Test 4: Stateless endpoint (in-brand)
-print_test "Stateless Endpoint" "POST /in-brand/uklait/token/capture"
+# Build examples if needed
+if [ ! -d "dist" ] || [ "src" -nt "dist" ]; then
+    echo -e "${YELLOW}🔨 Building examples...${NC}"
+    npm run build
+    echo ""
+fi
 
-echo '{
-    "cartId": "test-cart-789",
-    "version": 1,
-    "payments": [
-        {
-            "type": "tokenised",
-            "amount": {"amount": 89.99, "currencyCode": "GBP"},
-            "tokenisedPayment": {
-                "paymentToken": "tkn_agent_test",
-                "tokenType": "transient",
-                "billTo": {
-                    "firstName": "Sarah",
-                    "lastName": "Customer",
-                    "email": "sarah.customer@example.com",
-                    "address": {
-                        "address1": "101 Customer Road",
-                        "locality": "Edinburgh",
-                        "postalCode": "EH1 1AA",
-                        "country": "GB"
-                    }
-                }
-            }
-        }
-    ]
-}' | xh POST "${API_URL}/in-brand/uklait/token/capture" \
-    Content-Type:application/json \
-    Idempotency-Key:"$(generate_idempotency_key)"
+# Build command arguments
+CMD_ARGS=()
 
-# Test 5: 422 Validation Error - Cart version mismatch
-print_test "422 Validation Error" "POST /me/token/capture (version=999 triggers validation error)"
+if [ -n "$API_ID" ]; then
+    CMD_ARGS+=("--api-id" "$API_ID")
+fi
 
-echo '{
-    "cartId": "test-cart-error",
-    "version": 999,
-    "payments": [
-        {
-            "type": "tokenised",
-            "amount": {"amount": 49.99, "currencyCode": "GBP"},
-            "tokenisedPayment": {
-                "paymentToken": "tkn_test",
-                "tokenType": "transient",
-                "billTo": {
-                    "firstName": "Test",
-                    "lastName": "User",
-                    "email": "test@example.com",
-                    "address": {
-                        "address1": "123 Test Street",
-                        "locality": "London",
-                        "postalCode": "SW1A 1AA",
-                        "country": "GB"
-                    }
-                }
-            }
-        }
-    ]
-}' | xh POST "${API_URL}/me/token/capture" \
-    Content-Type:application/json \
-    Idempotency-Key:"$(generate_idempotency_key)" || true
+if [ -n "$BRAND_KEY" ]; then
+    CMD_ARGS+=("--brand-key" "$BRAND_KEY")
+fi
 
-# Test 6: 422 Validation Error - Out of stock
-print_test "422 Out of Stock Error" "POST /me/token/capture (cartId with 'outofstock' triggers error)"
+if [ -n "$REGION" ]; then
+    CMD_ARGS+=("--region" "$REGION")
+fi
 
-echo '{
-    "cartId": "test-cart-outofstock",
-    "version": 1,
-    "payments": [
-        {
-            "type": "tokenised",
-            "amount": {"amount": 49.99, "currencyCode": "GBP"},
-            "tokenisedPayment": {
-                "paymentToken": "tkn_test",
-                "tokenType": "transient",
-                "billTo": {
-                    "firstName": "Test",
-                    "lastName": "User",
-                    "email": "test@example.com",
-                    "address": {
-                        "address1": "123 Test Street",
-                        "locality": "London",
-                        "postalCode": "SW1A 1AA",
-                        "country": "GB"
-                    }
-                }
-            }
-        }
-    ]
-}' | xh POST "${API_URL}/me/token/capture" \
-    Content-Type:application/json \
-    Idempotency-Key:"$(generate_idempotency_key)" || true
+if [ -n "$EXAMPLE" ]; then
+    CMD_ARGS+=("--example" "$EXAMPLE")
+fi
 
-# Test 7: 400 Bad Request - Missing required fields
-print_test "400 Bad Request Error" "POST /me/token/capture (missing required fields)"
+if [ -n "$VERBOSE" ]; then
+    CMD_ARGS+=("$VERBOSE")
+fi
 
-echo '{
-    "cartId": "test-cart-badrequest"
-}' | xh POST "${API_URL}/me/token/capture" \
-    Content-Type:application/json \
-    Idempotency-Key:"$(generate_idempotency_key)" || true
+# Run the examples
+echo -e "${BLUE}🚀 Running examples...${NC}"
+echo ""
 
-# Test 8: OPTIONS request (CORS preflight)
-print_test "CORS Preflight" "OPTIONS /me/token/capture"
+if [ ${#CMD_ARGS[@]} -gt 0 ]; then
+    node dist/runner.js "${CMD_ARGS[@]}"
+else
+    node dist/runner.js
+fi
 
-xh OPTIONS "${API_URL}/me/token/capture"
+EXIT_CODE=$?
 
-echo -e "\n${BLUE}========================================${NC}"
-echo -e "${GREEN}All tests completed!${NC}"
-echo -e "${BLUE}========================================${NC}\n"
+echo ""
+if [ $EXIT_CODE -eq 0 ]; then
+    echo -e "${GREEN}✅ All tests completed successfully${NC}"
+else
+    echo -e "${RED}❌ Some tests failed${NC}"
+fi
+
+exit $EXIT_CODE
