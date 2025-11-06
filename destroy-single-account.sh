@@ -34,4 +34,11 @@ npx cdk destroy LambdaStack --profile "$PROFILE" --force \
   -c apiAccountId="$ACCOUNT_ID" \
   -c serviceAccountId="$ACCOUNT_ID"
 
+# Remove deployment lock file if it exists
+LOCK_FILE="../.api-deployment.lock"
+if [ -f "$LOCK_FILE" ]; then
+  rm -f "$LOCK_FILE"
+  echo "🗑️  Removed deployment lock file"
+fi
+
 echo "✅ Cleanup complete!"

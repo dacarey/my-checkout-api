@@ -130,8 +130,8 @@ function validateFileStructure() {
       log(`   npm version ${schemaVersion} --no-git-tag-version`, "yellow");
       log("2. Update schema file to match package.json:", "reset");
       log(`   sed -i 's/version: ${schemaVersion}/version: ${version}/' ${CONFIG.schemaPath}`, "yellow");
-      log("3. Use the version management script for future versions:", "reset");
-      log(`   node scripts/version-bump.js <next-version>`, "yellow");
+      log("3. Use npm version for future version bumps:", "reset");
+      log(`   npm run version:openapi <bump-type> (from project root)`, "yellow");
       process.exit(1);
     }
 

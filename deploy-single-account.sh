@@ -63,10 +63,59 @@ fi
 echo "✅ Found Lambda alias ARN: $LAMBDA_ARN"
 
 echo "🌐 Deploying API Stack..."
-npx cdk deploy ApiStack --profile "$PROFILE" --require-approval never \
+API_STACK_OUTPUT=$(npx cdk deploy ApiStack --profile "$PROFILE" --require-approval never \
   -c lambdaLiveAliasArn="$LAMBDA_ARN" \
   -c environment="$ENVIRONMENT" \
   -c apiAccountId="$ACCOUNT_ID" \
-  -c serviceAccountId="$ACCOUNT_ID"
+  -c serviceAccountId="$ACCOUNT_ID" \
+  --outputs-file cdk-outputs.json)
+
+# Extract API Gateway ID from CDK outputs
+if [ -f "cdk-outputs.json" ]; then
+  API_ID=$(node -e "
+    const fs = require('fs');
+    const outputs = JSON.parse(fs.readFileSync('cdk-outputs.json', 'utf-8'));
+    const apiStack = outputs['ApiStack'] || outputs['CheckoutApiStack-${ENVIRONMENT}'];
+    if (apiStack && apiStack.ApiGatewayId) {
+      console.log(apiStack.ApiGatewayId);
+    }
+  " 2>/dev/null)
+
+  # Clean up temporary file
+  rm -f cdk-outputs.json
+fi
+
+# Fallback: Try to get API ID from AWS CLI if CDK outputs didn't work
+if [ -z "$API_ID" ]; then
+  echo "⚠️  Could not extract API ID from CDK outputs, querying AWS API Gateway..."
+  API_ID=$(aws apigateway get-rest-apis --profile "$PROFILE" \
+    --query "items[?name=='CheckoutApi-${ENVIRONMENT}'].id" \
+    --output text 2>/dev/null | head -1)
+fi
+
+if [ -n "$API_ID" ]; then
+  echo "✅ API Gateway ID: $API_ID"
+
+  # Get region from AWS profile or use default
+  REGION=$(aws configure get region --profile "$PROFILE" 2>/dev/null || echo "eu-west-1")
+
+  # Create deployment lock file
+  LOCK_FILE="../.api-deployment.lock"
+  cat > "$LOCK_FILE" <<EOF
+{
+  "apiId": "$API_ID",
+  "region": "$REGION",
+  "stage": "$ENVIRONMENT",
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "lambdaFunctionName": "$FUNCTION_NAME"
+}
+EOF
+
+  echo "📝 Created deployment lock file: .api-deployment.lock"
+  echo "   This file contains API deployment info for use by examples and tests"
+else
+  echo "⚠️  Warning: Could not determine API Gateway ID"
+  echo "   You may need to manually specify API_ID when running examples"
+fi
 
 echo "✅ Deployment complete!"

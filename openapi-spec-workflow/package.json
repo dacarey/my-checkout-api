@@ -1,8 +1,11 @@
 {
   "name": "my-checkout-api-openapi-spec-workflow",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "OpenAPI Specification Workflow for My Checkout API",
   "scripts": {
+    "preversion": "echo $npm_package_version > .version-old",
+    "version": "node scripts/sync-openapi-version.js",
+    "postversion": "rm -f .version-old",
     "validate": "npm run validate:spectral && npm run validate:schemas",
     "validate:spectral": "spectral lint ../openapi/checkout-openapi-unresolved.yaml",
     "validate:schemas": "node scripts/validate-schemas.js",
@@ -11,8 +14,6 @@
     "download:resolved:force": "node scripts/download-resolved.js --force",
     "publish:dev": "node scripts/publish.js --dev",
     "publish:prod": "node scripts/publish.js --prod",
-    "version:bump": "node scripts/version-bump.js",
-    "version:help": "node scripts/version-bump.js --help",
     "compare:specs": "scripts/compare-specs.sh"
   },
   "devDependencies": {
@@ -21,11 +22,7 @@
     "jest-openapi": "^0.14.2",
     "swaggerhub-cli": "^0.9.1"
   },
-  "overrides": {
-    "axios": "^1.12.0"
-  },
   "engines": {
-    "npm": ">=11.0.0",
     "node": ">=22.0.0"
   },
   "keywords": [

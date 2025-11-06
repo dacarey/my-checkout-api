@@ -1,0 +1,41 @@
+{
+  "name": "@dw-digital-commerce/checkout-3ds-session-service-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "3DS session management library and infrastructure for Direct Wines Checkout API",
+  "workspaces": [
+    "library",
+    "infra"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=library && npm run build --workspace=infra",
+    "build:library": "npm run build --workspace=library",
+    "build:infra": "npm run build --workspace=infra",
+    "test": "npm run test --workspace=library",
+    "test:run": "npm run test:run --workspace=library",
+    "clean": "npm run clean --workspace=library && npm run clean --workspace=infra",
+    "deploy:dev": "./scripts/deploy.sh --profile dw-sandbox --environment dev",
+    "diff:dev": "./scripts/diff.sh --profile dw-sandbox --environment dev",
+    "destroy:dev": "./scripts/destroy.sh --profile dw-sandbox --environment dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dacarey/my-checkout-api.git",
+    "directory": "packages/checkout-3ds-session-service"
+  },
+  "keywords": [
+    "checkout",
+    "3ds",
+    "3d-secure",
+    "payment-sessions",
+    "session-management",
+    "direct-wines",
+    "dynamodb",
+    "aws-cdk"
+  ],
+  "author": "Direct Wines Digital Commerce Team",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

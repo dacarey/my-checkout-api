@@ -41,10 +41,52 @@ export class LambdaStack extends Stack {
         target: 'node22',
         externalModules: []
       },
-      logGroup: logGroup
+      logGroup: logGroup,
+      environment: {
+        USE_REAL_PAYMENT_PROVIDER: process.env.USE_REAL_PAYMENT_PROVIDER || 'false',
+        PAYMENT_CREDENTIALS_SECRET: process.env.PAYMENT_CREDENTIALS_SECRET || `dwaws-${props.config.environment}-payments-credentials`,
+        DEFAULT_BRANDKEY: props.config.brandKey || 'uklait',
+        NODE_ENV: props.config.environment,
+        ENVIRONMENT: props.config.environment, // Required by checkout-3ds-session-service
+        AUTH_SESSION_TABLE_NAME: process.env.AUTH_SESSION_TABLE_NAME || `checkout-api-${props.config.environment}-3ds-sessions`,
+        USE_MOCK_AUTH: process.env.USE_MOCK_AUTH || 'true' // Use mock auth service for testing (checkout-3ds-session-service)
+      }
     });
 
     this.serviceFunction = fn;
+
+    // Add IAM permissions for Secrets Manager access
+    // This allows Lambda to retrieve Cybersource credentials from AWS Secrets Manager
+    // Reuses the same secret as my-payments-api: dwaws-{environment}-payments-credentials
+    fn.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'secretsmanager:GetSecretValue',
+        'secretsmanager:DescribeSecret'
+      ],
+      resources: [
+        `arn:aws:secretsmanager:${props.config.region}:${props.config.serviceAccountId}:secret:dwaws-${props.config.environment}-payments-credentials-*`
+      ]
+    }));
+
+    // Add IAM permissions for DynamoDB access (3DS session storage)
+    // This allows Lambda to read/write 3DS authentication sessions
+    const tableName = process.env.AUTH_SESSION_TABLE_NAME || `checkout-api-${props.config.environment}-3ds-sessions`;
+    fn.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'dynamodb:GetItem',
+        'dynamodb:PutItem',
+        'dynamodb:UpdateItem',
+        'dynamodb:DeleteItem',
+        'dynamodb:Query',
+        'dynamodb:Scan'
+      ],
+      resources: [
+        `arn:aws:dynamodb:${props.config.region}:${props.config.serviceAccountId}:table/${tableName}`,
+        `arn:aws:dynamodb:${props.config.region}:${props.config.serviceAccountId}:table/${tableName}/index/*`
+      ]
+    }));
 
     const version = fn.currentVersion;
     this.liveAlias = new lambda.Alias(this, 'LiveAlias', {

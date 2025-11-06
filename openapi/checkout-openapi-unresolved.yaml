@@ -8,15 +8,16 @@ info:
     name: "Direct Wines Proprietary"
     url: "https://www.directwines.com"
     x-notice: "This specification and all related materials are the exclusive property of Direct Wines and may not be used, copied, or distributed without explicit permission."
-  version: 0.4.0
+  version: 0.5.0
   description: |
     This is the API specification for the Digital Commerce Checkout API. It provides operations for:
     - Order capture with tokenised payment methods (credit cards, Apple Pay, Google Pay)
     - Order capture with stored payment methods (gift vouchers)
     - Cart validation and order creation
-    - 3DS authentication flow support
+    - 3DS authentication flow support with validate-capture endpoints
+    - Complete 3D Secure authentication and order completion
 
-    **Payment API Integration**: This API is aligned with Payment API v0.2.0 for payment
+    **Payment API Integration**: This API is aligned with Payment API v0.3.0 for payment
     processing schemas, ensuring consistency in address structures (ISO 19160), 3DS flows,
     and payment token handling.
 
@@ -81,7 +82,10 @@ info:
     ## 2. Payment Processing
     - **Tokenised payments**: Credit cards, Apple Pay, Google Pay (via existing Payments API)
     - **Stored payments**: Gift vouchers and other stored payment methods
-    - **3DS handling**: Support for 3D Secure authentication flows
+    - **3DS handling**: Complete 3D Secure authentication flow support:
+      - Initial capture returns 202 with authentication requirements
+      - Customer completes 3DS challenge
+      - Validate-capture endpoints complete the order creation
 
     ## Order Object Design
 
@@ -106,6 +110,31 @@ info:
     For delivery address management, see the Cart API documentation.
 
     ---
+    # 3D Secure Authentication Flow
+
+    The Checkout API provides complete support for 3D Secure (3DS) authentication through a two-step process:
+
+    ## Step 1: Initial Order Capture
+    - Call `/me/token/capture` or `/in-brand/{brandkey}/token/capture`
+    - If 3DS is required, receive **HTTP 202 Accepted** with:
+      - `threeDSSessionId`: Unique session identifier
+      - `challengeInfo`: Complete challenge information including stepUpUrl and stepUpToken
+      - `paymentContext`: Payment amount and method details
+      - `status` and `timestamp`: Session status and expiry tracking
+
+    ## Step 2: Complete 3DS Authentication
+    - After customer completes the 3DS challenge
+    - Call `/me/3ds/validate-capture` or `/in-brand/{brandkey}/3ds/validate-capture`
+    - Submit the `threeDSSessionId` and 3DS completion data (CAVV, ECI, transaction ID)
+    - Receive **HTTP 201 Created** with the completed order
+
+    ## Important Notes
+    - Authentication sessions expire after 30 minutes
+    - Each session can only be used once
+    - The original cart must remain unchanged between steps
+    - Failed 3DS validation returns HTTP 422 with validation errors
+
+    ---
     # REST-Compliant Status Codes
 
     This API follows REST best practices for HTTP status codes, which differs from some payment industry conventions:
@@ -122,6 +151,61 @@ info:
     - Validation failed → 422
 
     This makes our API more self-documenting and easier to integrate, as developers can rely on standard HTTP semantics.
+
+    ---
+    # Payment Decline Handling
+
+    ## Why Payment Declines Return HTTP 422
+
+    Payment declines return **HTTP 422 (Business Validation Error)**, not HTTP 200. This differs from the Payment API's design.
+
+    **Why Different from Payment API?**
+    - **Checkout API**: Creates orders → Payment decline means no order created → HTTP 422
+    - **Payment API**: Processes payments → Transaction attempt succeeded → HTTP 200
+
+    **Multiple Payment Support:**
+    Orders can use multiple payment methods (e.g., £30 gift card + £70 credit card). If any payment fails, all are rolled back and no order is created.
+
+    **Consistent Error Handling:**
+    All checkout failures (stock issues, delivery restrictions, payment declines) return HTTP 422, enabling uniform client-side error handling.
+
+    ### Client Implementation
+
+    ```javascript
+    try {
+      const order = await checkout(cart, payments);
+      redirectToOrderConfirmation(order.id);
+    } catch (error) {
+      if (error.status === 422) {
+        const { orderLevel, lineItemLevel } = error.validations;
+
+        // Filter payment-related errors
+        const paymentErrors = orderLevel.filter(v =>
+          ['PaymentDeclined', 'InsufficientFunds', 'CardExpired'].includes(v.code)
+        );
+
+        if (paymentErrors.length > 0) {
+          promptForAlternativePayment(paymentErrors);
+        }
+      }
+    }
+    ```
+
+    **Payment Decline Example:**
+    ```json
+    HTTP 422
+    {
+      "orderLevel": [
+        {
+          "code": "PaymentDeclined",
+          "message": "Payment was declined by the card issuer."
+        }
+      ],
+      "lineItemLevel": []
+    }
+    ```
+
+    **No order created** - cart remains unchanged for retry with alternative payment.
 
     ---
     # Checkout Validation Handling Guide
@@ -412,7 +496,7 @@ paths:
               description: URL of the authentication session
               schema:
                 type: string
-                example: "/authentication-sessions/auth-3169811e-fa0a-321"
+                example: "/3ds-sessions/auth-3169811e-fa0a-321"
           content:
             application/json:
               schema:
@@ -421,22 +505,22 @@ paths:
                 requires-3ds-validation:
                   summary: 3DS authentication required
                   value:
-                    authenticationId: "auth-3169811e-fa0a-321"
+                    threeDSSessionId: "auth-3169811e-fa0a-321"
                     cartId: "3169811e-fa0a-789"
-                    threeDSUrl: "https://3ds.psp.com/challenge/abc123"
                     transactionId: "7507655240516609704808"
-                    merchantReference: "YOUR_MID"
+                    status: "requires3DSAuthentication"
+                    timestamp: "2025-11-06T14:30:00Z"
+                    challengeInfo:
+                      stepUpUrl: "https://centinelapi.cardinalcommerce.com/V2/Cruise/StepUp"
+                      stepUpToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+                      authenticationTransactionId: "f5d1e3c2-1234-5678-9012-345678901234"
+                      threeDSServerTransactionId: "8a829417-232b-4f3e-8020-e88c9a5a8b32"
+                      directoryServerTransactionId: "d5180465-bae3-4df7-940d-3b029b7de81a"
                     paymentContext:
                       amount:
                         amount: 159.99
                         currencyCode: "EUR"
                       paymentMethod: "tokenised"
-                    nextAction:
-                      type: "redirect_to_url"
-                      redirectToUrl:
-                        url: "https://3ds.psp.com/challenge/abc123"
-                        method: "POST"
-                        returnUrl: "https://merchant.example.com/checkout/3ds-return"
         "400":
           $ref: "#/components/responses/StructureError"
         "401":
@@ -485,6 +569,198 @@ paths:
         **Example usage:**
 
         `OPTIONS /checkout/me/token/capture`
+      x-amazon-apigateway-integration:
+        uri: "arn:aws:apigateway:${AWSRegion}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWSRegion}:${ServiceAccountID}:function:dwaws-${Environment}-checkout-order-capture-lambda/invocations"
+        responses:
+          default:
+            statusCode: 200
+            responseParameters:
+              method.response.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,Idempotency-Key'"
+              method.response.header.Access-Control-Allow-Origin: "'None'"
+        passthroughBehavior: never
+        httpMethod: POST
+        type: aws_proxy
+      x-amazon-apigateway-auth:
+        type: "NONE"
+      responses:
+        "200":
+          description: "Options pre-flight request successfully acknowledged"
+          headers:
+            Strict-Transport-Security:
+              schema:
+                type: string
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/StructureError"
+
+  /me/3ds/validate-capture:
+    post:
+      tags:
+        - Personal Checkout API
+      summary: Complete 3DS authenticated order for authenticated customer
+      description: |
+        Completes order creation after successful 3D Secure authentication for the
+        authenticated customer. This endpoint is called after the customer successfully
+        completes the 3DS challenge presented in the 202 response from `/me/token/capture`.
+
+        **Process Flow:**
+        1. **Initial Capture**: Call `/me/token/capture` → receive HTTP 202 with threeDSSessionId
+        2. **3DS Challenge**: Redirect customer to 3DS URL for authentication
+        3. **Completion**: Call this endpoint with threeDSSessionId and 3DS results
+        4. **Order Creation**: Server validates 3DS data and creates order
+
+        **Response Codes:**
+        - **201 Created**: Order successfully created after 3DS validation
+        - **409 Conflict**: Authentication session already used or expired
+        - **422 Unprocessable Entity**: 3DS validation failed or cart no longer valid
+
+        **3DS Data Flow:**
+        - Receives completion phase data from 3DS authentication
+        - Validates with Payment API `/3ds/validate-capture` endpoint
+        - Creates order using original cart and payment details from session
+
+        **Session Management:**
+        - Authentication sessions expire after 30 minutes
+        - Sessions can only be used once
+        - Original cart must still be valid and unchanged
+
+        **Example usage:**
+
+        `POST /checkout/me/3ds/validate-capture`
+      operationId: validateCaptureForMe
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ThreeDSValidateCaptureRequest"
+            examples:
+              successful-3ds-completion:
+                summary: Successful 3DS authentication completion
+                value:
+                  threeDSSessionId: "auth-3169811e-fa0a-321"
+                  threeDSData:
+                    phase: "completion"
+                    completion:
+                      authenticationTransactionId: "txn_3ds_67890"
+                      cavv: "AAABCZIhcQAAAABZlyFxAAAAAAA="
+                      eciIndicator: "05"
+              3ds-v1-completion:
+                summary: 3DS v1 completion with XID
+                value:
+                  threeDSSessionId: "auth-3169811e-fa0a-456"
+                  threeDSData:
+                    phase: "completion"
+                    completion:
+                      authenticationTransactionId: "txn_3ds_12345"
+                      cavv: "BBBCDEFGhijkAAAABZlyFxBBBBBBB="
+                      eciIndicator: "05"
+                      xid: "MDAyMTExMTYwNTI1MzEzNjI4Njg="
+      responses:
+        "201":
+          description: Order successfully created after 3DS validation
+          headers:
+            Location:
+              description: URL of the created order resource
+              schema:
+                type: string
+                example: "/orders/order-3169811e-fa0a-789"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+              examples:
+                3ds-validated-order:
+                  summary: Order created after 3DS validation
+                  value:
+                    id: "order-3169811e-fa0a-789"
+                    version: 1
+                    status: "completed"
+                    totalLineItems: 2
+                    totalItemQuantity: 3
+                    numberOfBottles: 36
+                    totalListPrice:
+                      amount: 159.99
+                      currencyCode: "EUR"
+                    totalPrice:
+                      amount: 159.99
+                      currencyCode: "EUR"
+                    customerId: "c1e2d3f4-5a6b-7c8d-9e0f-1a2b3c4d5e6f"
+                    responseCode: "VAJ1C"
+                    paymentDetails:
+                      - type: "tokenised"
+                        amount:
+                          amount: 159.99
+                          currencyCode: "EUR"
+                        status: "authorized"
+                        tokenisedPaymentResult:
+                          transactionId: "auth_3ds_complete_12345"
+                          authorisationCode: "3DS789"
+                          merchantReference: "YOUR_MID"
+                    createdAt: "2025-04-22T17:35:00Z"
+                    lastModifiedAt: "2025-04-22T17:35:00Z"
+        "400":
+          $ref: "#/components/responses/StructureError"
+        "401":
+          $ref: "#/components/responses/UnauthorisedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "409":
+          description: |
+            **Conflict Errors**
+
+            409 errors occur when there are conflicts with the authentication session:
+            - Authentication session already used
+            - Authentication session expired (>30 minutes)
+            - Cart has been modified since authentication started
+            - Duplicate idempotency key with different parameters
+          content:
+            application/json:
+              schema:
+                $ref: "https://api.swaggerhub.com/apis/Direct_Wines/CommonModelDefinitionSuite/1.0.0#/components/schemas/ErrorMessageResponse"
+        "422":
+          $ref: "#/components/responses/BusinessError"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+      security:
+        - GlobalAuthoriser: []
+      x-amazon-apigateway-integration:
+        uri: "arn:aws:apigateway:${AWSRegion}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWSRegion}:${ServiceAccountID}:function:dwaws-${Environment}-checkout-order-capture-lambda/invocations"
+        responses:
+          default:
+            statusCode: 200
+            responseParameters:
+              method.response.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+        passthroughBehavior: never
+        httpMethod: POST
+        type: aws_proxy
+
+    options:
+      tags:
+        - CORS
+      summary: Informs the clients which CORS methods are available and for what domains.
+      operationId: validateCaptureForMeOptions
+      description: |
+        This operation is exposed for managing CORS with pre-flight requests sent by clients
+        before 3DS validate-capture operation.
+
+        **Example usage:**
+
+        `OPTIONS /checkout/me/3ds/validate-capture`
       x-amazon-apigateway-integration:
         uri: "arn:aws:apigateway:${AWSRegion}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWSRegion}:${ServiceAccountID}:function:dwaws-${Environment}-checkout-order-capture-lambda/invocations"
         responses:
@@ -677,7 +953,7 @@ paths:
               description: URL of the authentication session
               schema:
                 type: string
-                example: "/authentication-sessions/auth-3169811e-fa0a-456"
+                example: "/3ds-sessions/auth-3169811e-fa0a-456"
           content:
             application/json:
               schema:
@@ -779,6 +1055,202 @@ paths:
         "400":
           $ref: "#/components/responses/StructureError"
 
+  /in-brand/{brandkey}/3ds/validate-capture:
+    post:
+      tags:
+        - Stateless Checkout API
+      summary: Complete 3DS authenticated order within specified brand
+      description: |
+        Completes order creation after successful 3D Secure authentication within the
+        specified brand. This endpoint is called after the customer successfully
+        completes the 3DS challenge presented in the 202 response from
+        `/in-brand/{brandkey}/token/capture`.
+
+        **Process Flow:**
+        1. **Initial Capture**: Call `/in-brand/{brandkey}/token/capture` → receive HTTP 202 with threeDSSessionId
+        2. **3DS Challenge**: Redirect customer to 3DS URL for authentication
+        3. **Completion**: Call this endpoint with threeDSSessionId and 3DS results
+        4. **Order Creation**: Server validates 3DS data and creates order
+
+        **Response Codes:**
+        - **201 Created**: Order successfully created after 3DS validation
+        - **409 Conflict**: Authentication session already used or expired
+        - **422 Unprocessable Entity**: 3DS validation failed or cart no longer valid
+
+        **3DS Data Flow:**
+        - Receives completion phase data from 3DS authentication
+        - Validates with Payment API `/in-brand/{brandkey}/3ds/validate-capture` endpoint
+        - Creates order using original cart and payment details from session
+
+        **Session Management:**
+        - Authentication sessions expire after 30 minutes
+        - Sessions can only be used once
+        - Original cart must still be valid and unchanged
+
+        **Agent Usage:**
+        This endpoint is intended for authenticated agents acting on behalf of customers,
+        such as call center representatives or backend services.
+
+        **Example usage:**
+
+        `POST /checkout/in-brand/uklait/3ds/validate-capture`
+      operationId: validateCaptureInBrand
+      parameters:
+        - in: path
+          name: brandkey
+          required: true
+          description: |
+            Key of the brand.
+          schema:
+            type: string
+          examples:
+            example-uk-brand:
+              value: "uklait"
+            example-us-brand:
+              value: "us4s"
+            example-au-brand:
+              value: "auwp"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ThreeDSValidateCaptureRequest"
+            examples:
+              call-center-3ds-completion:
+                summary: Call center agent completing 3DS for customer
+                value:
+                  threeDSSessionId: "auth-3169811e-fa0a-456"
+                  threeDSData:
+                    phase: "completion"
+                    completion:
+                      authenticationTransactionId: "txn_3ds_agent_123"
+                      cavv: "CCCDEFGHijklAAAABZlyFxCCCCCCC="
+                      eciIndicator: "05"
+              backend-service-3ds-completion:
+                summary: Backend service completing 3DS automatically
+                value:
+                  threeDSSessionId: "auth-3169811e-fa0a-789"
+                  threeDSData:
+                    phase: "completion"
+                    completion:
+                      authenticationTransactionId: "txn_3ds_service_456"
+                      cavv: "DDDEFGHIjklmAAAABZlyFxDDDDDDD="
+                      eciIndicator: "06"
+                      xid: "MDEyMzQ1Njc4OTAxMjM0NTY3ODk="
+      responses:
+        "201":
+          description: Order successfully created after 3DS validation
+          headers:
+            Location:
+              description: URL of the created order resource
+              schema:
+                type: string
+                example: "/orders/order-3169811e-fa0a-456"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/StructureError"
+        "401":
+          $ref: "#/components/responses/UnauthorisedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "409":
+          description: |
+            **Conflict Errors**
+
+            409 errors occur when there are conflicts with the authentication session:
+            - Authentication session already used
+            - Authentication session expired (>30 minutes)
+            - Cart has been modified since authentication started
+            - Duplicate idempotency key with different parameters
+          content:
+            application/json:
+              schema:
+                $ref: "https://api.swaggerhub.com/apis/Direct_Wines/CommonModelDefinitionSuite/1.0.0#/components/schemas/ErrorMessageResponse"
+        "422":
+          $ref: "#/components/responses/BusinessError"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+      security:
+        - GlobalAuthoriser: []
+      x-amazon-apigateway-integration:
+        uri: "arn:aws:apigateway:${AWSRegion}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWSRegion}:${ServiceAccountID}:function:dwaws-${Environment}-checkout-order-capture-lambda/invocations"
+        responses:
+          default:
+            statusCode: 200
+            responseParameters:
+              method.response.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+        passthroughBehavior: never
+        httpMethod: POST
+        type: aws_proxy
+
+    options:
+      tags:
+        - CORS
+      summary: Informs the clients which CORS methods are available and for what domains.
+      operationId: validateCaptureInBrandOptions
+      description: |
+        This operation is exposed for managing CORS with pre-flight requests sent by clients
+        before 3DS validate-capture operation.
+
+        **Example usage:**
+
+        `OPTIONS /checkout/in-brand/uklait/3ds/validate-capture`
+      parameters:
+        - in: path
+          name: brandkey
+          required: true
+          description: |
+            Key of the brand.
+          schema:
+            type: string
+          examples:
+            example-uk-brand:
+              value: "uklait"
+            example-us-brand:
+              value: "us4s"
+            example-au-brand:
+              value: "auwp"
+      x-amazon-apigateway-integration:
+        uri: "arn:aws:apigateway:${AWSRegion}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWSRegion}:${ServiceAccountID}:function:dwaws-${Environment}-checkout-order-capture-lambda/invocations"
+        responses:
+          default:
+            statusCode: 200
+            responseParameters:
+              method.response.header.Strict-Transport-Security: "'max-age=63072000; includeSubdomains'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,Idempotency-Key'"
+              method.response.header.Access-Control-Allow-Origin: "'None'"
+        passthroughBehavior: never
+        httpMethod: POST
+        type: aws_proxy
+      x-amazon-apigateway-auth:
+        type: "NONE"
+      responses:
+        "200":
+          description: "Options pre-flight request successfully acknowledged"
+          headers:
+            Strict-Transport-Security:
+              schema:
+                type: string
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/StructureError"
+
 components:
   securitySchemes:
     GlobalAuthoriser:
@@ -821,16 +1293,16 @@ components:
 
   schemas:
     # ----------------------------------------
-    #  Payment API v0.2.0 Schema References
+    #  Payment API v0.3.0 Schema References
     #
     # These schemas are defined in the Payment API and referenced here to ensure
     # consistency across payment processing endpoints.
 
     PaymentBillingDetails:
-      $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.2.0#/components/schemas/AddressableParty'
+      $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.3.0#/components/schemas/AddressableParty'
 
     PaymentThreeDSData:
-      $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.2.0#/components/schemas/ThreeDSData'
+      $ref: 'https://api.swaggerhub.com/apis/Direct_Wines/payments-api/0.3.0#/components/schemas/ThreeDSData'
 
     # ----------------------------------------
     #  Common Objects
@@ -912,7 +1384,7 @@ components:
     TokenisedPaymentDetails:
       type: object
       description: |
-        Tokenised payment details aligned with Payment API v0.2.0 TokenAuthoriseRequest.
+        Tokenised payment details aligned with Payment API v0.3.0 TokenAuthoriseRequest.
         This schema contains the essential fields needed for checkout payment processing.
 
         **Alignment with Payment API**: This schema is a subset of the Payment API's
@@ -1265,21 +1737,27 @@ components:
             - InvalidCartState
             - PaymentAmountMismatch
             - DeliveryRestriction
-            - InsufficientFunds
+            # Payment-related validation codes
             - PaymentDeclined
+            - InsufficientFunds
+            - CardExpired
             # Line item-level validation codes
             - ItemUnavailable
             - ItemOutOfStock
             - ComplianceRestriction
             - QuantityExceedsLimit
           x-enum-descriptions:
+            # Order-level descriptions
             - "The specified cart does not exist or is not accessible to the current user"
             - "The cart version has changed since the checkout request was initiated"
             - "The cart is in a state that prevents checkout (empty, locked, or invalid)"
             - "The sum of payment amounts does not match the cart total"
             - "Delivery is not available to the specified delivery address"
+            # Payment-related descriptions
+            - "Payment was declined by the payment processor or gateway (generic decline)"
             - "Insufficient funds available on gift voucher or stored payment method"
-            - "Payment was declined by the payment processor or gateway"
+            - "Payment card has expired and cannot be used"
+            # Line item-level descriptions
             - "The line item is no longer available for purchase"
             - "The requested quantity exceeds the available stock for this item"
             - "The item cannot be sold due to regulatory or compliance restrictions"
@@ -1316,42 +1794,109 @@ components:
       type: object
       description: |
         Response returned when 3D Secure authentication is required before order creation.
-        The customer must complete the authentication challenge before the order can be created.
-
-        Use the `/3ds/validate-capture` endpoint after successful authentication to complete
+        The customer must complete the authentication challenge using the challengeInfo details.
+        Use the /3ds/validate-capture endpoint after successful authentication to complete
         the order creation.
+
+        This response includes challengeInfo aligned with Payment API v0.3.0 for consistency
+        in 3DS authentication flow.
       required:
-        - authenticationId
+        - threeDSSessionId
         - cartId
-        - threeDSUrl
         - transactionId
+        - status
+        - timestamp
+        - challengeInfo
         - paymentContext
-        - nextAction
       properties:
-        authenticationId:
+        threeDSSessionId:
           type: string
-          description: Unique identifier for this 3DS authentication session.
+          description: |
+            Unique identifier for this 3DS authentication session in the Checkout API.
+            This session expires after 30 minutes and is single-use.
+            Must be provided in the subsequent /3ds/validate-capture request.
           example: "auth-3169811e-fa0a-321"
         cartId:
           type: string
-          description: The cart ID being checked out (will become order ID after successful authentication).
+          description: |
+            The cart ID being checked out. This will become the order ID after
+            successful 3DS authentication and validation.
           example: "3169811e-fa0a-789"
-        threeDSUrl:
-          type: string
-          format: uri
-          description: URL for the 3DS authentication challenge.
-          example: "https://3ds.psp.com/challenge/abc123"
         transactionId:
           type: string
-          description: Payment processor transaction ID for tracking.
+          description: |
+            Payment API transaction ID for this payment attempt.
+            Used internally to correlate with Payment API /3ds/validate-capture call.
           example: "7507655240516609704808"
-        merchantReference:
+        status:
           type: string
-          description: Merchant reference for the payment.
-          example: "YOUR_MID"
+          enum: [requires3DSAuthentication]
+          description: |
+            Explicit status indicating 3DS authentication is required.
+            Complements HTTP 202 status code for self-documenting responses.
+          example: "requires3DSAuthentication"
+        timestamp:
+          type: string
+          format: date-time
+          description: |
+            ISO 8601 timestamp when this 3DS authentication session was created.
+            Use this to track the 30-minute session expiry window.
+          example: "2025-11-06T14:30:00Z"
+        challengeInfo:
+          type: object
+          description: |
+            Complete 3DS challenge information from Payment API v0.3.0.
+            This object contains all details needed to present the 3DS challenge
+            to the customer using Cardinal Commerce/Cybersource.
+          required:
+            - stepUpUrl
+            - stepUpToken
+          properties:
+            stepUpUrl:
+              type: string
+              format: uri
+              description: |
+                Cardinal Commerce/Cybersource Step-Up URL - the primary endpoint for
+                presenting the 3DS challenge in an iframe.
+                The frontend must POST the stepUpToken to this URL.
+              example: "https://centinelapi.cardinalcommerce.com/V2/Cruise/StepUp"
+            stepUpToken:
+              type: string
+              description: |
+                JWT token that must be POSTed to stepUpUrl to initiate the 3DS challenge.
+                This token authenticates the challenge request to Cardinal Commerce.
+                CRITICAL: Without this token, 3DS authentication will fail.
+              example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+            acsUrl:
+              type: string
+              format: uri
+              description: |
+                Issuing bank's Access Control Server (ACS) URL.
+                This is for diagnostic purposes only and should not be used by merchants.
+              example: "https://acs.issuer.com/3ds/acs/challenge"
+            authenticationTransactionId:
+              type: string
+              description: |
+                Authentication transaction identifier used for correlation and debugging.
+                Useful for support teams troubleshooting 3DS authentication issues.
+              example: "f5d1e3c2-1234-5678-9012-345678901234"
+            threeDSServerTransactionId:
+              type: string
+              description: |
+                3DS server transaction identifier from the payment service provider.
+                Used for internal tracking and PSP integration debugging.
+              example: "8a829417-232b-4f3e-8020-e88c9a5a8b32"
+            directoryServerTransactionId:
+              type: string
+              description: |
+                Directory server transaction identifier from the card network.
+                Used for payment network-level tracking and debugging.
+              example: "d5180465-bae3-4df7-940d-3b029b7de81a"
         paymentContext:
           type: object
-          description: Context about the payment requiring authentication.
+          description: |
+            Business context about the payment requiring authentication.
+            Helps the frontend display meaningful messages to the customer.
           required:
             - amount
             - paymentMethod
@@ -1361,43 +1906,85 @@ components:
             paymentMethod:
               type: string
               enum: [tokenised]
-              description: Type of payment requiring authentication.
+              description: Type of payment method requiring authentication.
               example: "tokenised"
-        nextAction:
+
+    ThreeDSValidateCaptureRequest:
+      type: object
+      description: |
+        Request to complete order creation after successful 3D Secure authentication.
+        This request includes the authentication session reference and the 3DS completion
+        data obtained after the customer successfully completes the 3DS challenge.
+
+        **Process Flow:**
+        1. Customer completes 3DS challenge via the redirect URL
+        2. Client receives 3DS completion data (CAVV, ECI, transaction ID)
+        3. Client submits this request to complete the order
+        4. Server validates 3DS data with Payment API
+        5. Server creates order if validation succeeds
+
+        **Alignment with Payment API v0.3.0:**
+        The threeDSData structure uses the phase-based discriminator model from
+        Payment API v0.3.0, specifically the "completion" phase.
+      required:
+        - threeDSSessionId
+        - threeDSData
+      properties:
+        threeDSSessionId:
+          type: string
+          description: |
+            The authentication session ID returned in the 202 response from the
+            initial token/capture request. This links the 3DS completion to the
+            original checkout attempt.
+          example: "auth-3169811e-fa0a-321"
+        threeDSData:
           type: object
-          description: Instructions for the next action required (following Stripe's pattern).
+          description: |
+            3D Secure completion data following Payment API v0.3.0 phase-based structure.
+            Must use the "completion" phase with authentication results.
           required:
-            - type
-            - redirectToUrl
+            - phase
+            - completion
           properties:
-            type:
+            phase:
               type: string
-              enum: [redirect_to_url]
-              description: Type of action required.
-              example: "redirect_to_url"
-            redirectToUrl:
+              enum: [completion]
+              description: |
+                Must be "completion" to indicate 3DS authentication has been completed.
+              example: "completion"
+            completion:
               type: object
-              description: Redirect details for 3DS authentication.
+              description: |
+                3DS completion data received after successful customer authentication.
               required:
-                - url
-                - method
-                - returnUrl
+                - authenticationTransactionId
+                - cavv
+                - eciIndicator
               properties:
-                url:
+                authenticationTransactionId:
                   type: string
-                  format: uri
-                  description: The URL to redirect the customer to.
-                  example: "https://3ds.psp.com/challenge/abc123"
-                method:
+                  description: |
+                    Transaction ID from the 3DS authentication provider, received
+                    after successful customer challenge completion.
+                  example: "txn_3ds_67890"
+                cavv:
                   type: string
-                  enum: [GET, POST]
-                  description: HTTP method to use for the redirect.
-                  example: "POST"
-                returnUrl:
+                  description: |
+                    Cardholder Authentication Verification Value (CAVV) - cryptographic
+                    proof of successful 3DS authentication.
+                  example: "AAABCZIhcQAAAABZlyFxAAAAAAA="
+                eciIndicator:
                   type: string
-                  format: uri
-                  description: URL to return to after authentication.
-                  example: "https://merchant.example.com/checkout/3ds-return"
+                  description: |
+                    Electronic Commerce Indicator (ECI) indicating the 3DS authentication
+                    result. Common values: "05" (fully authenticated), "06" (attempted).
+                  example: "05"
+                xid:
+                  type: string
+                  description: |
+                    Optional transaction identifier (XID) for 3DS version 1. Not required
+                    for 3DS version 2.
+                  example: "MDAyMTExMTYwNTI1MzEzNjI4Njg="
 
   responses:
     StructureError:
@@ -1425,8 +2012,16 @@ components:
         * `InvalidCartState` - Cart is empty, locked, or invalid
         * `PaymentAmountMismatch` - Payment amounts don't match cart total
         * `DeliveryRestriction` - Delivery unavailable to specified address
+
+        **Payment Issues:**
+        * `PaymentDeclined` - Generic payment decline from processor
+        * `CardDeclined` - Credit/debit card declined by issuer
+        * `CardExpired` - Payment card has expired
         * `InsufficientFunds` - Insufficient gift voucher balance
-        * `PaymentDeclined` - Payment declined by processor
+        * `InvalidCardDetails` - Card details invalid or incomplete
+        * `PaymentProcessorError` - Processor error during transaction
+        * `FraudSuspected` - Payment blocked due to fraud detection
+        * `PaymentMethodNotSupported` - Payment method not supported
 
         **Line Item Issues:**
         * `ItemUnavailable` - Item no longer available for purchase
@@ -1486,6 +2081,36 @@ components:
                   - code: "QuantityExceedsLimit"
                     message: "Maximum 6 units per order allowed for 'Limited Edition Port 2010', but 10 were requested."
                     lineItemId: "e67f4dc9-ec1a-4d63-b96f-9ab1ac99f1a5"
+            payment-declined-single:
+              summary: Single payment method declined
+              value:
+                orderLevel:
+                  - code: "PaymentDeclined"
+                    message: "Payment was declined by the card issuer. Reason: Insufficient funds."
+                lineItemLevel: []
+            payment-declined-mixed-payment:
+              summary: Mixed payment with partial failure
+              value:
+                orderLevel:
+                  - code: "PaymentDeclined"
+                    message: "Credit card payment of £70.00 was declined by the issuer."
+                lineItemLevel: []
+            payment-insufficient-funds-gift-card:
+              summary: Insufficient gift card balance
+              value:
+                orderLevel:
+                  - code: "InsufficientFunds"
+                    message: "Gift voucher balance of £15.00 is insufficient for requested payment of £30.00."
+                lineItemLevel: []
+            payment-multiple-decline-reasons:
+              summary: Multiple payment-related validation failures
+              value:
+                orderLevel:
+                  - code: "CardExpired"
+                    message: "Primary credit card payment was declined because the card has expired."
+                  - code: "InsufficientFunds"
+                    message: "Gift voucher GV-2024-ABC123 has insufficient balance (£10.00 available, £20.00 required)."
+                lineItemLevel: []
     InternalError:
       $ref: "https://api.swaggerhub.com/apis/Direct_Wines/CommonModelDefinitionSuite/1.0.0#/components/responses/InternalError"
     TooManyRequestsError:

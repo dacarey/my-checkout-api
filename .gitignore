@@ -46,6 +46,7 @@ jspm_packages/
 
 # dotenv environment variables file
 .env
+.npmrc
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -89,3 +90,8 @@ Thumbs.db
 openapi-spec-workflow/output/lambda/dist/
 openapi-spec-workflow/output/spec-diff-*
 lambda/dist/
+examples/dist/
+packages/**/dist/
+*.tsbuildinfo
+cdk.out/
+.api-deployment.lock

@@ -1,24 +1,42 @@
 {
   "name": "my-checkout-api",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Multi-account serverless checkout API using AWS CDK with TypeScript",
   "engines": {
     "node": ">=22.0.0"
   },
   "workspaces": [
     "lambda",
-    "infra"
+    "infra",
+    "openapi-spec-workflow",
+    "packages/checkout-3ds-session-service/library",
+    "packages/checkout-3ds-session-service/infra",
+    "examples"
   ],
   "scripts": {
     "build": "npm run build --workspace=infra",
+    "build:3ds-lib": "npm run build --workspace=packages/checkout-3ds-session-service/library",
+    "build:3ds-infra": "npm run build --workspace=packages/checkout-3ds-session-service/infra",
     "test": "npm run test --workspace=infra",
     "test:run": "npm run test:run --workspace=infra",
+    "test:3ds": "npm run test --workspace=packages/checkout-3ds-session-service/library",
+    "test:3ds:run": "npm run test:run --workspace=packages/checkout-3ds-session-service/library",
+    "test:3ds-infra": "npm run test --workspace=packages/checkout-3ds-session-service/infra",
+    "test:3ds-infra:run": "npm run test:run --workspace=packages/checkout-3ds-session-service/infra",
     "deploy:single": "BYPASS_AUTHORIZER=true ./deploy-single-account.sh",
     "deploy:single:auth": "./deploy-single-account.sh",
     "diff:single": "BYPASS_AUTHORIZER=true ./diff-single-account.sh",
     "diff:single:auth": "./diff-single-account.sh",
     "destroy:single": "./destroy-single-account.sh",
-    "prepare": "husky"
+    "verify": "./verify-deployment.sh",
+    "examples": "./test-checkout-api.sh",
+    "examples:build": "npm run build --workspace=examples",
+    "examples:dev": "npm run dev --workspace=examples",
+    "examples:verbose": "./test-checkout-api.sh --verbose",
+    "prepare": "husky",
+    "version:all": "npm version --workspaces --include-workspace-root",
+    "version:impl": "npm version --workspace=lambda --workspace=infra --include-workspace-root",
+    "version:openapi": "npm version --workspace=openapi-spec-workflow"
   },
   "repository": {
     "type": "git",
@@ -33,5 +51,8 @@
   "homepage": "https://github.com/dacarey/my-checkout-api#readme",
   "devDependencies": {
     "husky": "^9.1.7"
+  },
+  "overrides": {
+    "axios": "^1.13.1"
   }
 }

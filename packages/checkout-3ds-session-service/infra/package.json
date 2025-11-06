@@ -1,0 +1,40 @@
+{
+  "name": "@dw-digital-commerce/checkout-3ds-session-service-infra",
+  "version": "1.0.0",
+  "description": "CDK infrastructure for 3DS session management DynamoDB table",
+  "bin": {
+    "3ds-session-infra": "bin/infra.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "clean": "rm -rf dist cdk.out",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "cdk": "cdk"
+  },
+  "keywords": [
+    "aws-cdk",
+    "dynamodb",
+    "3ds",
+    "3d-secure",
+    "payment-sessions",
+    "infrastructure"
+  ],
+  "author": "Direct Wines Digital Commerce Team",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "aws-cdk": "^2.172.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.172.0",
+    "constructs": "^10.4.2",
+    "source-map-support": "^0.5.21"
+  }
+}
