@@ -5,6 +5,24 @@ All notable changes to the Checkout API will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-11-06
+
+### Added
+- 3DS validate-capture endpoints: `POST /me/3ds/validate-capture` and `POST /in-brand/{brandkey}/3ds/validate-capture`
+- Session-based authentication system with DynamoDB-backed storage (30-minute TTL)
+- `checkout-3ds-session-service` workspace package for managing 3DS sessions
+- Example client implementation and test suite
+
+### Changed
+- Payment decline responses now return 422 (Unprocessable Entity) instead of 400
+- Token-capture endpoint creates authentication sessions for 3DS flows, returning `threeDSSessionId` in 202 responses
+- Enhanced error handling with specific codes: 404 (session expired), 409 (session already used), 503 (service unavailable)
+
+### Fixed
+- Token type mapping between provider and API formats
+
+---
+
 ## [0.4.0] - 2025-10-20
 
 ### Changed - BREAKING CHANGES (Alpha Release)
