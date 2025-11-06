@@ -7,7 +7,7 @@
  * Response scenarios:
  * - 201 Created: Payment authorized successfully
  * - 202 Accepted: 3DS authentication required (returns challengeInfo)
- * - 400 Bad Request: Payment declined
+ * - 422 Unprocessable Entity: Payment declined
  * - 500 Internal Server Error: Processing error
  */
 
@@ -128,31 +128,36 @@ export async function handleTokenCapture(
         throw new Error('3DS validation required but challenge information is unavailable');
       }
 
-      // Generate session ID for Checkout API
-      const threeDSSessionId = `auth-${body.cartId}-${Date.now()}`;
+      console.log(`📝 Creating 3DS session for 3DS flow`);
 
-      console.log(`📝 Creating 3DS session: ${threeDSSessionId}`);
+      // NOTE: This is a reference implementation for demonstrating the OpenAPI spec.
+      // In production, customerId/anonymousId should be extracted from the OAuth token
+      // to prevent session hijacking. For demo purposes, we use a fixed value.
+      const demoCustomerId = 'demo-customer-123';
+
+      // Map tokenType from provider format to core format
+      const coreTokenType: 'transient' | 'stored' =
+        tokenType === 'transient_token' ? 'transient' : 'stored';
 
       // Store session using checkout-3ds-session-service
-      await authService.createSession({
-        sessionId: threeDSSessionId,
-        cartId: body.cartId,
+      const session = await authService.createSession({
+        cartId: cartId,
         cartVersion: body.cartVersion || 1,
-        transactionId: result.transactionId,
-        paymentToken: body.paymentToken,
-        billingDetails: body.billingAddress,
-        paymentAmount: body.totalPrice,
-        expiresInMinutes: 30
+        paymentToken: paymentToken,
+        tokenType: coreTokenType,
+        billTo: billTo,
+        threeDSSetupData: result.threeDSSetupData,
+        customerId: demoCustomerId
       });
 
-      console.log(`✅ 3DS session created successfully`);
+      console.log(`✅ 3DS session created successfully: ${session.id}`);
 
       // Map to Checkout API ThreeDSAuthenticationRequired response (aligned with Payment API v0.3.0)
       return {
         statusCode: 202,
         body: JSON.stringify({
-          threeDSSessionId,
-          cartId: body.cartId,
+          threeDSSessionId: session.id,
+          cartId: cartId,
           transactionId: result.transactionId,
           status: 'requires3DSAuthentication',
           timestamp: new Date().toISOString(),
@@ -165,7 +170,10 @@ export async function handleTokenCapture(
             directoryServerTransactionId: result.challengeInfo.directoryServerTransactionId
           },
           paymentContext: {
-            amount: body.totalPrice,
+            amount: {
+              amount: amount,
+              currencyCode: currency
+            },
             paymentMethod: 'tokenised'
           }
         })
@@ -178,7 +186,7 @@ export async function handleTokenCapture(
       return {
         statusCode: 201,
         body: JSON.stringify({
-          orderId: body.cartId,
+          orderId: cartId,
           status: 'completed',
           transactionId: result.transactionId,
           authorizationCode: result.authorizationCode,
@@ -191,7 +199,7 @@ export async function handleTokenCapture(
     // Handle decline
     console.log(`❌ Payment declined: ${result.declineReason || 'Unknown reason'}`);
     return {
-      statusCode: 400,
+      statusCode: 422,
       body: JSON.stringify({
         error: 'payment_declined',
         message: result.declineReason || 'Payment was declined by the payment provider',

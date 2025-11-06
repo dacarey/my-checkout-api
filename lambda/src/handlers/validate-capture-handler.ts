@@ -6,13 +6,18 @@
  *
  * Response scenarios:
  * - 201 Created: Payment authorized after 3DS validation
- * - 400 Bad Request: Payment declined after 3DS validation
  * - 404 Not Found: 3DS session not found or expired
  * - 409 Conflict: 3DS session already used
+ * - 422 Unprocessable Entity: Payment declined after 3DS validation
  * - 500 Internal Server Error: Processing error
  */
 
-import { getAuthenticationService } from '@dw-digital-commerce/checkout-3ds-session-service';
+import {
+  getAuthenticationService,
+  SessionNotFoundError,
+  SessionAlreadyUsedError,
+  StorageServiceError
+} from '@dw-digital-commerce/checkout-3ds-session-service';
 import { getPaymentProvider } from '../providers/provider-factory';
 import type { ValidateCaptureRequest } from '../providers/types';
 
@@ -107,7 +112,7 @@ export async function handleValidateCapture(
     // Handle decline after 3DS authentication
     console.log(`❌ Payment declined after 3DS validation: ${result.declineReason || 'Unknown reason'}`);
     return {
-      statusCode: 400,
+      statusCode: 422,
       body: JSON.stringify({
         error: 'payment_declined',
         message: result.declineReason || 'Payment was declined after 3DS authentication',
@@ -119,7 +124,41 @@ export async function handleValidateCapture(
   } catch (error) {
     console.error('❌ Validate-capture handler error:', error);
 
-    // Determine error type and return appropriate response
+    // Handle session service errors with appropriate status codes
+    if (error instanceof SessionNotFoundError) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({
+          error: 'session_not_found',
+          message: '3DS authentication session not found or has expired',
+          timestamp: new Date().toISOString()
+        })
+      };
+    }
+
+    if (error instanceof SessionAlreadyUsedError) {
+      return {
+        statusCode: 409,
+        body: JSON.stringify({
+          error: 'session_already_used',
+          message: '3DS authentication session has already been used to complete payment',
+          timestamp: new Date().toISOString()
+        })
+      };
+    }
+
+    if (error instanceof StorageServiceError) {
+      return {
+        statusCode: 503,
+        body: JSON.stringify({
+          error: 'service_unavailable',
+          message: 'Authentication service temporarily unavailable. Please retry.',
+          timestamp: new Date().toISOString()
+        })
+      };
+    }
+
+    // Generic error fallback
     const errorMessage = error instanceof Error ? error.message : 'Validation processing failed';
 
     return {
