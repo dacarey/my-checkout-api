@@ -45,15 +45,17 @@ npm run destroy:single
 Test the deployed API using the provided test script:
 
 ```bash
-# Use default API URL (from script)
+# Use default API URL (automatically reads from .api-deployment.lock after deployment)
 ./test-checkout-api.sh
 
-# Specify custom API Gateway URL
+# Or specify custom API Gateway URL if needed
 ./test-checkout-api.sh https://your-api-id.execute-api.eu-west-1.amazonaws.com/dev
 
 # Or set as environment variable
 API_GATEWAY_URL=https://your-api-id.execute-api.eu-west-1.amazonaws.com/dev ./test-checkout-api.sh
 ```
+
+**Note**: After deployment, the API Gateway URL is automatically saved to `.api-deployment.lock`, so the test script will use the correct API endpoint by default without manual configuration.
 
 The test script includes:
 - **Single tokenised payment** - Credit card payment under £150 (COMPLETED order)
@@ -67,12 +69,24 @@ Requirements: `xh` (HTTPie) and `uuidgen` must be installed.
 
 ## Manual Deployment
 
+**Recommended for developer testing:**
+```bash
+# Deploy with BYPASS_AUTHORIZER=true (disables authentication for easier testing)
+npm run deploy:single
+
+# Deploy with full authentication (for testing with real auth)
+npm run deploy:single:auth
+```
+
+**Advanced: Using deployment script directly**
 ```bash
 # Deploy to specific profile/environment
 ./deploy-single-account.sh --profile PROFILE --environment ENV
 
 # Default: --profile dw-sandbox --environment dev
 ```
+
+**Note**: The npm script `deploy:single` automatically sets `BYPASS_AUTHORIZER=true` for the dev environment, making it easier to test API endpoints without authentication. For production-like testing with authentication enabled, use `deploy:single:auth`.
 
 ## Project Structure
 
