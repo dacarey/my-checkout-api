@@ -1,9 +1,21 @@
 # User Story: Implement 3DS Validate-Capture Endpoints
 
 **Date Created:** 2025-11-04
-**Status:** Ready for JIRA
+**Date Updated:** 2025-11-07
+**Status:** ✅ Implemented in Reference Implementation (v0.5.0)
 **Target:** Direct Wines Checkout Microservice Team
-**Related:** Checkout API v0.5.0 - 3DS Validate-Capture Endpoints
+**Related:** Checkout API v0.5.0 - 3DS Validate-Capture Endpoints (Released)
+
+---
+
+## Implementation Status
+
+**Reference Implementation:** ✅ Complete
+- OpenAPI Specification v0.5.0: Released
+- Authentication Session Service: Implemented in [packages/checkout-3ds-session-service](../../../packages/checkout-3ds-session-service)
+- Lambda Handlers: Implemented in [lambda/src/handlers](../../../lambda/src/handlers)
+
+**Note for Direct Wines Team:** This document describes the requirements that have been implemented in the reference Lambda microservice. You will need to adapt this implementation to integrate with your commercetools platform while reusing the authentication session service and following the same patterns.
 
 ---
 
@@ -131,30 +143,42 @@ All error responses must align with OpenAPI specification:
 - **HTTP 409 Conflict**: Session not found, already used, or expired; cart modified
 - **HTTP 422 Unprocessable Entity**: Payment declines, 3DS validation failures, business rule violations
 
-## Definition of Done
+## Definition of Done (Reference Implementation)
 
-- [ ] Both endpoint variants (`/me` and `/in-brand/{brandkey}`) implemented and deployed
-- [ ] All 8 acceptance criteria verified with automated tests
-- [ ] Unit tests cover success paths and all error scenarios (403, 409, 422)
-- [ ] Integration tests validate end-to-end 3DS flow (initial capture → 3DS challenge → validate-capture → order creation)
-- [ ] Stateful session service integrated and tested
-- [ ] OpenAPI specification compliance verified
-- [ ] Security review completed for session ownership validation
-- [ ] Error handling verified for all payment decline scenarios
-- [ ] Monitoring/logging implemented for session operations and security events
-- [ ] Code reviewed and merged to main branch
-- [ ] Deployed to development environment and smoke tested
-- [ ] Product Owner accepts demo of complete 3DS flow
+- [x] Both endpoint variants (`/me` and `/in-brand/{brandkey}`) implemented and deployed
+- [x] All 8 acceptance criteria verified with automated tests
+- [x] Unit tests cover success paths and all error scenarios (403, 409, 422)
+- [x] Integration tests validate end-to-end 3DS flow (initial capture → 3DS challenge → validate-capture → order creation)
+- [x] Stateful session service integrated and tested
+- [x] OpenAPI specification compliance verified
+- [x] Security review completed for session ownership validation
+- [x] Error handling verified for all payment decline scenarios
+- [x] Monitoring/logging implemented for session operations and security events
+- [x] Code reviewed and merged to main branch
+- [x] Deployed to development environment and smoke tested
+- [x] Product Owner accepts demo of complete 3DS flow
+
+**For Direct Wines Production Implementation:**
+- [ ] Integrate with commercetools cart service for cart retrieval and version validation
+- [ ] Integrate with commercetools order service for order creation
+- [ ] Configure brand-specific merchant credentials
+- [ ] Adapt OAuth integration for Direct Wines authentication provider
+- [ ] Deploy authentication session service (DynamoDB table + Lambda environment variables)
+- [ ] Run end-to-end tests with commercetools integration
+- [ ] Complete security review for production deployment
 
 ## References
 
-**Confluence Documentation:**
-- **"Technical Report: 3DS Authentication Flow Design - Stateful vs. Stateless Analysis"** (Architectural decision record with industry research)
-- **OpenAPI Specification v0.5.0** - 3DS Validate-Capture Endpoints
+**Documentation:**
+- [ARCHITECTURE-3DS-Stateful-Design-Decision.md](./ARCHITECTURE-3DS-Stateful-Design-Decision.md) - Architectural decision record with industry research
+- [SPEC-Authentication-Session-Library.md](./SPEC-Authentication-Session-Library.md) - Authentication session service specification
+- [INTEGRATION-Payments-SDK-Mapping.md](./INTEGRATION-Payments-SDK-Mapping.md) - Payments-SDK integration guide
+- [OpenAPI Specification v0.5.0](../../../openapi/checkout-openapi-unresolved.yaml) - Complete API definition
 
-**Related Stories:**
-- [Link to initial capture endpoint story, if exists]
-- [Link to authentication session service implementation story, if exists]
+**Reference Implementation:**
+- [Authentication Session Service](../../../packages/checkout-3ds-session-service) - Reusable session management library
+- [Lambda Handlers](../../../lambda/src/handlers) - Initial capture and validate-capture implementation
+- [Example Client Tests](../../../examples/src) - End-to-end test scenarios
 
 ## Story Points
 **Estimate:** [To be determined by team - suggest 8-13 points given complexity of session management, payment integration, and security requirements]
@@ -379,6 +403,7 @@ When creating the JIRA ticket, include:
 
 ---
 
-**Version:** 1.0
-**Last Updated:** 2025-11-04
+**Version:** 1.1
+**Last Updated:** 2025-11-07
+**Implementation Status:** ✅ Reference implementation complete (v0.5.0)
 **Contact:** Checkout API Team

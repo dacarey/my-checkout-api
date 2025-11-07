@@ -1,9 +1,9 @@
 # Technical Report: 3DS Authentication Flow Design - Stateful vs. Stateless Analysis
 
-**Date:** 2025-11-03
-**Version:** 1.0
-**Status:** Research Complete
-**Related:** Checkout API v0.5.0 - 3DS Validate-Capture Endpoints
+**Date:** 2025-11-03 (Updated: 2025-11-07)
+**Version:** 1.1
+**Status:** Implemented in Checkout API v0.5.0
+**Related:** Checkout API v0.5.0 - 3DS Validate-Capture Endpoints (Released)
 
 ---
 
@@ -433,7 +433,7 @@ interface AuthenticationSession {
 }
 ```
 
-**Recommended Implementation:** Use the `@dw-digital-commerce/checkout-authentication-service` library as specified in [SPEC-checkout-authentication-service.md](./SPEC-checkout-authentication-service.md). This library provides production-ready DynamoDB and testing-focused Mock implementations with complete session lifecycle management, including automatic TTL-based cleanup, encryption at rest, and single-use enforcement.
+**Recommended Implementation:** Use the `@dw-digital-commerce/checkout-3ds-session-service` library as specified in [SPEC-Authentication-Session-Library.md](./SPEC-Authentication-Session-Library.md) and implemented in [packages/checkout-3ds-session-service](../../../packages/checkout-3ds-session-service). This library provides production-ready DynamoDB and testing-focused Mock implementations with complete session lifecycle management, including automatic TTL-based cleanup, encryption at rest, and single-use enforcement.
 
 #### 2. Session Lifecycle Management
 
@@ -892,6 +892,7 @@ For questions about this technical report:
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2025-11-03
-**Next Review:** 2025-12-03 (or when implementing v0.5.0)
+**Document Version:** 1.1
+**Last Updated:** 2025-11-07
+**Implementation Status:** ✅ Complete - v0.5.0 Released
+**Next Review:** As needed for future enhancements

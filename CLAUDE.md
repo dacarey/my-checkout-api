@@ -17,8 +17,18 @@ This is a serverless checkout API project designed for multi-account AWS deploym
 ### Project Structure
 ```
 my-checkout-api/
-├── docs/docs/howto/                        # Template documentation and integration guides
+├── docs/
+│   ├── howto/                               # Developer guides (start here)
+│   │   ├── README.md                        # Navigation hub for guides
+│   │   ├── getting-started-payments.md     # Comprehensive payment integration guide
+│   │   ├── advanced-3ds-integration.md     # 3DS authentication guide
+│   │   └── multi-account-deployment.md     # AWS multi-account setup
+│   ├── architecture/                        # Design decisions and specifications
+│   │   ├── 3ds-stateful-design/            # Complete 3DS implementation docs
+│   │   └── payment-api-alignment-v0.4.0-archive/  # Historical reference
+│   └── VERSION-BUMP-GUIDE.md               # Version management procedures
 ├── lambda/                                  # Lambda function code (TypeScript)
+│   └── src/handlers/                        # Request handlers for API endpoints
 ├── infra/                                   # CDK infrastructure as code (TypeScript)
 │   ├── src/bin/                             # CDK app entry point
 │   ├── src/lib/                             # Stack definitions and configuration
@@ -368,8 +378,22 @@ npm run version:all patch|minor|major
 - `version:all` bumps all packages with the same increment type
 - See [docs/VERSION-BUMP-GUIDE.md](docs/VERSION-BUMP-GUIDE.md) for detailed usage
 
-## Reference Documentation
+## Documentation Navigation
 
-- Multi-account template guide: [docs/docs/howto/template-multi-account-serverless-api.md](docs/docs/howto/template-multi-account-serverless-api.md)
-- AWS Lambda integration: [docs/docs/howto/Hoto-integrate-awslambda-with-payments-sdk.md](docs/docs/howto/Hoto-integrate-awslambda-with-payments-sdk.md)
-- Version bump guide: [docs/VERSION-BUMP-GUIDE.md](docs/VERSION-BUMP-GUIDE.md)
+### Developer Guides (Start Here)
+- **[Getting Started with Payments](docs/howto/getting-started-payments.md)** - Comprehensive guide with security best practices, complete Lambda implementation, CDK stack setup, and testing
+- **[Advanced 3DS Integration](docs/howto/advanced-3ds-integration.md)** - Implementing 3D Secure authentication with stateful sessions
+- **[Multi-Account Deployment](docs/howto/multi-account-deployment.md)** - AWS multi-account setup and deployment strategies
+- **[Developer Guides Hub](docs/howto/README.md)** - Navigation hub for all practical guides
+
+### Architecture Documentation
+- **[3DS Stateful Design](docs/architecture/3ds-stateful-design/)** - Complete implementation documentation including:
+  - Architecture decision record with industry research
+  - Payment SDK integration patterns (Payment API v0.3.0)
+  - Technical specification for session service
+  - Implementation user story
+- **[Architecture Hub](docs/architecture/README.md)** - Index of all design decisions and specifications
+
+### Additional Resources
+- **[Version Bump Guide](docs/VERSION-BUMP-GUIDE.md)** - Procedures for managing API and implementation versions
+- **[Historical Documentation](docs/architecture/payment-api-alignment-v0.4.0-archive/)** - Archived v0.4.0 alignment documentation

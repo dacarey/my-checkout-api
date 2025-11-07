@@ -1,21 +1,89 @@
-# Alignment Report: 3DS Validate-Capture Endpoint with Payments-SDK
+# Integration Guide: 3DS Validate-Capture with Payments-SDK
 
-**Date:** 2025-11-03
-**Version:** 1.0
-**Status:** Cross-Check Complete
+**Date:** 2025-11-03 (Updated: 2025-11-07)
+**Version:** 1.2
+**Status:** Validated with Reference Implementation - Payment API v0.3.0 Aligned
 **Related Documents:**
-- [TECHNICAL-REPORT-3DS-Stateful-vs-Stateless-Design.md](./TECHNICAL-REPORT-3DS-Stateful-vs-Stateless-Design.md)
-- Checkout API v0.5.0 - 3DS Validate-Capture Endpoints
-- Payment API v0.2.0
+- [ARCHITECTURE-3DS-Stateful-Design-Decision.md](./ARCHITECTURE-3DS-Stateful-Design-Decision.md)
+- Checkout API v0.5.0 - 3DS Validate-Capture Endpoints (Released)
+- Payment API v0.3.0
 - `@dw-digital-commerce/payments-sdk` v2.4.1+
+
+**Reference Implementation:**
+- Authentication Session Service: [packages/checkout-3ds-session-service](../../../packages/checkout-3ds-session-service)
+- Lambda Handlers: [lambda/src/handlers](../../../lambda/src/handlers)
 
 ---
 
 ## Executive Summary
 
-This report validates the alignment between the Checkout API's `/me/3ds/validate-capture` and `/in-brand/{brandkey}/3ds/validate-capture` endpoints with the `@dw-digital-commerce/payments-sdk` library. The analysis confirms that the **stateful session-based design is compatible** with the payments-sdk integration patterns, with specific recommendations for digital wallet handling and merchant configuration.
+This report validates the alignment between the Checkout API's `/me/3ds/validate-capture` and `/in-brand/{brandkey}/3ds/validate-capture` endpoints with the `@dw-digital-commerce/payments-sdk` library. The implementation is **fully aligned with Payment API v0.3.0**, including the critical `challengeInfo` structure with `stepUpUrl` and `stepUpToken` required for 3DS authentication.
 
-**Key Finding:** The current endpoint design successfully maps to payments-sdk integration points for transient tokens, stored tokens, and 3DS completion flows. Digital wallet support (Google Pay, Apple Pay) requires explicit specification to ensure consistent implementation.
+**Key Finding:** The current endpoint design successfully maps to payments-sdk integration points for transient tokens, stored tokens, and 3DS completion flows. The v0.3.0 `challengeInfo` structure provides all necessary data for Cardinal Commerce/Cybersource 3DS authentication. Digital wallet support (Google Pay, Apple Pay) requires explicit specification to ensure consistent implementation.
+
+---
+
+## Payment API v0.3.0 Alignment
+
+### Breaking Changes from v0.2.0 to v0.3.0
+
+The Checkout API v0.5.0 implementation is fully aligned with **Payment API v0.3.0**, which introduced critical enhancements to the 3DS authentication flow:
+
+#### Key Changes
+
+**1. Introduction of `challengeInfo` Object Structure**
+
+Payment API v0.2.0 returned a flat structure with a single `threeDSUrl`:
+```yaml
+# v0.2.0 Response
+threeDSUrl: "https://3ds.psp.com/challenge/abc123"
+```
+
+Payment API v0.3.0 introduced a structured `challengeInfo` object:
+```yaml
+# v0.3.0 Response
+challengeInfo:
+  stepUpUrl: "https://centinelapi.cardinalcommerce.com/V2/Cruise/StepUp"
+  stepUpToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  acsUrl: "https://acs.issuer.com/3ds/acs/challenge"
+  authenticationTransactionId: "f5d1e3c2-1234-5678-9012-345678901234"
+  threeDSServerTransactionId: "8a829417-232b-4f3e-8020-e88c9a5a8b32"
+  directoryServerTransactionId: "d5180465-bae3-4df7-940d-3b029b7de81a"
+```
+
+**2. Addition of `stepUpToken` (CRITICAL)**
+
+The most critical addition in v0.3.0 is the `stepUpToken` field, which is a JWT token required for Cardinal Commerce/Cybersource 3DS authentication:
+
+```typescript
+// Frontend 3DS Challenge Flow (v0.3.0)
+const { stepUpUrl, stepUpToken } = response.challengeInfo;
+
+// Create iframe and POST stepUpToken
+const form = iframe.contentDocument.createElement('form');
+form.method = 'POST';
+form.action = stepUpUrl;
+
+const jwtInput = document.createElement('input');
+jwtInput.name = 'JWT';  // Cardinal Commerce expects 'JWT' parameter
+jwtInput.value = stepUpToken;  // CRITICAL: Required for authentication
+form.appendChild(jwtInput);
+form.submit();
+```
+
+**Without `stepUpToken`**: The 3DS authentication flow was non-functional in v0.2.0, as Cardinal Commerce rejects unauthenticated challenge requests.
+
+**3. Additional Diagnostic Fields**
+
+v0.3.0 includes additional fields for correlation and debugging:
+- `acsUrl`: Issuing bank's Access Control Server URL (diagnostic only)
+- `authenticationTransactionId`: Used for support troubleshooting
+- `threeDSServerTransactionId`: PSP-level tracking
+- `directoryServerTransactionId`: Card network-level tracking
+
+#### Impact on Integration
+
+The Checkout API v0.5.0 `ThreeDSAuthenticationRequired` response schema (returned in HTTP 202 responses) fully implements the v0.3.0 `challengeInfo` structure. All integration patterns in this document reflect v0.3.0 alignment.
 
 ---
 
@@ -864,7 +932,8 @@ jest.mock('@dw-digital-commerce/payments-sdk', () => ({
 |--------|--------|-------|
 | **Transient Token Flow** | ✅ Validated | Session stores all required data for payments-sdk |
 | **Stored Token Flow** | ✅ Validated | Customer ID and token reference properly preserved |
-| **3DS Data Structure** | ✅ Validated | Phase-based discriminator aligns with Payment API v0.2.0 |
+| **3DS Data Structure** | ✅ Validated | Phase-based discriminator aligns with Payment API v0.3.0 |
+| **3DS challengeInfo Structure** | ✅ Validated | Complete v0.3.0 challengeInfo with stepUpUrl and stepUpToken |
 | **Session Management** | ✅ Validated | Single-use enforcement, TTL, ownership validation |
 | **Session Data Completeness** | ⚠️ Partial | Merchant config and processor selection undefined |
 | **Google Pay/Apple Pay** | ⚠️ Needs Clarification | Implicit support as transient tokens; explicit spec needed |
@@ -886,15 +955,16 @@ jest.mock('@dw-digital-commerce/payments-sdk', () => ({
 
 ## 11. Conclusion
 
-The `/me/3ds/validate-capture` and `/in-brand/{brandkey}/3ds/validate-capture` endpoint design is **architecturally sound** and successfully maps to the `@dw-digital-commerce/payments-sdk` integration patterns. The stateful session-based approach aligns with industry best practices (Stripe, PayPal, Adyen, Checkout.com) and properly handles both transient and stored tokens throughout the 3DS authentication flow.
+The `/me/3ds/validate-capture` and `/in-brand/{brandkey}/3ds/validate-capture` endpoint design is **architecturally sound** and successfully maps to the `@dw-digital-commerce/payments-sdk` integration patterns. The implementation is **fully aligned with Payment API v0.3.0**, including the critical `challengeInfo` structure with `stepUpUrl` and `stepUpToken` required for Cardinal Commerce/Cybersource 3DS authentication. The stateful session-based approach aligns with industry best practices (Stripe, PayPal, Adyen, Checkout.com) and properly handles both transient and stored tokens throughout the 3DS authentication flow.
 
 ### Key Strengths
 
-1. ✅ **Session storage preserves all payment data** needed for payments-sdk integration
-2. ✅ **Single-use session enforcement** prevents duplicate charges
-3. ✅ **Cart version validation** prevents stale checkout attempts
-4. ✅ **Customer ownership validation** prevents session hijacking
-5. ✅ **Comprehensive error handling** for all edge cases
+1. ✅ **Payment API v0.3.0 alignment** with complete challengeInfo structure for 3DS authentication
+2. ✅ **Session storage preserves all payment data** needed for payments-sdk integration
+3. ✅ **Single-use session enforcement** prevents duplicate charges
+4. ✅ **Cart version validation** prevents stale checkout attempts
+5. ✅ **Customer ownership validation** prevents session hijacking
+6. ✅ **Comprehensive error handling** for all edge cases
 
 ### Areas Requiring Clarification
 
@@ -903,25 +973,21 @@ The `/me/3ds/validate-capture` and `/in-brand/{brandkey}/3ds/validate-capture` e
 3. ⚠️ **Token TTL Alignment:** Verify session TTL doesn't exceed transient token validity
 4. ⚠️ **Processor Selection:** How is the payment processor chosen for multi-processor environments?
 
-### Next Steps
+### Next Steps (Post v0.5.0 Release)
 
-1. **Immediate:** Define merchant configuration strategy (environment variables vs. configuration service)
-2. **Before v0.5.0:** Add explicit `walletProvider` field for digital wallet support
-3. **Before v0.5.0:** Verify CyberSource transient token TTL and adjust session TTL if needed
-4. **Testing:** Implement comprehensive integration tests with payments-sdk mocking
+1. **High Priority:** Define merchant configuration strategy (environment variables vs. configuration service)
+2. **Future Enhancement:** Add explicit `walletProvider` field for digital wallet support
+3. **Validation Needed:** Verify CyberSource transient token TTL and adjust session TTL if needed
+4. **Testing:** Expand integration tests with payments-sdk mocking for edge cases
 
-**Overall Assessment:** ✅ **Ready for implementation** with clarifications on merchant configuration and token TTL validation.
+**Overall Assessment:** ✅ **Implementation Complete and Validated** - v0.5.0 successfully implements Payment API v0.3.0 alignment with full challengeInfo support. Remaining work focuses on operational clarifications (merchant configuration, token TTL validation).
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2025-11-03
-**Next Review:** After payments-sdk integration testing
+**Document Version:** 1.2
+**Last Updated:** 2025-11-07
+**Implementation Status:** ✅ Validated with reference implementation in v0.5.0 (Payment API v0.3.0 aligned)
+**Next Review:** As needed for future enhancements
 
-**Authors:**
-- Technical Lead: [Name]
-- Payment Integration Team: [Name]
-
-**Reviewers:**
-- Security Team: [Name]
-- Payments-SDK Team: [Name]
+**For Direct Wines Implementation:**
+This guide is validated and ready to use. The reference implementation demonstrates all Payment API v0.3.0 patterns described here, including the critical `challengeInfo` structure with `stepUpUrl` and `stepUpToken`. Adapt the session retrieval and cart validation logic for commercetools integration while keeping the payments-SDK integration patterns unchanged.
