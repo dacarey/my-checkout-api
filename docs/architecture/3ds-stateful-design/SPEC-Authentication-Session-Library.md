@@ -1,29 +1,41 @@
-# Technical Specification: Checkout Authentication Service
+# Technical Specification: 3DS Authentication Session Service
 
-**Package Name:** `@dw-digital-commerce/checkout-authentication-service`
+**Package Name:** `@dw-digital-commerce/checkout-3ds-session-service`
 **Version:** 1.0.0
-**Status:** Draft
-**Target Release:** Aligned with Checkout API v0.5.0
-**Last Updated:** 2025-11-03
+**Status:** ✅ Implemented
+**Checkout API Version:** v0.5.0 (Released)
+**Last Updated:** 2025-11-07
+**Reference Implementation:** [packages/checkout-3ds-session-service](../../../packages/checkout-3ds-session-service)
 **Related Documents:**
-- [TECHNICAL-REPORT-3DS-Stateful-vs-Stateless-Design.md](./TECHNICAL-REPORT-3DS-Stateful-vs-Stateless-Design.md)
+- [ARCHITECTURE-3DS-Stateful-Design-Decision.md](./ARCHITECTURE-3DS-Stateful-Design-Decision.md)
+- [INTEGRATION-Payments-SDK-Mapping.md](./INTEGRATION-Payments-SDK-Mapping.md)
 
 ---
 
 ## Executive Summary
 
-This specification defines an npm library for managing 3D Secure (3DS) authentication sessions in the Direct Wines Checkout API. The library provides an abstract interface for session storage with two concrete implementations:
+This specification defines the authentication session service library for managing 3D Secure (3DS) authentication sessions in the Checkout API. The service is **fully implemented** in [packages/checkout-3ds-session-service](../../../packages/checkout-3ds-session-service) and provides two concrete implementations:
 
-1. **DynamoDB Provider** - Production-ready scalable storage with automatic TTL-based cleanup
-2. **Mock Provider** - In-memory storage for testing without AWS dependencies
+1. **DynamoDB Provider** ([dynamodb-authentication-service.ts](../../../packages/checkout-3ds-session-service/library/src/providers/dynamodb/dynamodb-authentication-service.ts)) - Production-ready scalable storage with automatic TTL-based cleanup
+2. **Mock Provider** ([mock-authentication-service.ts](../../../packages/checkout-3ds-session-service/library/src/providers/mock/mock-authentication-service.ts)) - In-memory storage for testing without AWS dependencies
+
+### Implementation Status
+
+✅ **Complete Reference Implementation Available**
+- Core interfaces: [src/core/interfaces.ts](../../../packages/checkout-3ds-session-service/library/src/core/interfaces.ts)
+- Type definitions: [src/core/types.ts](../../../packages/checkout-3ds-session-service/library/src/core/types.ts)
+- Error classes: [src/core/errors.ts](../../../packages/checkout-3ds-session-service/library/src/core/errors.ts)
+- Service factory: [src/factory/authentication-service-factory.ts](../../../packages/checkout-3ds-session-service/library/src/factory/authentication-service-factory.ts)
+- Unit tests: [test/](../../../packages/checkout-3ds-session-service/library/test/)
+- CDK infrastructure: [infra/](../../../packages/checkout-3ds-session-service/infra/)
 
 ### Key Design Principles
 
 - **Abstraction**: Interface-based design enabling provider swapping
-- **Security-First**: Encrypted storage, single-use sessions, time-limited validity
+- **Security-First**: DynamoDB table-level encryption, single-use sessions, time-limited validity
 - **Testability**: Mock provider for fast, deterministic unit tests
 - **Industry-Aligned**: Follows patterns from Stripe, PayPal, Adyen, Checkout.com
-- **Checkout-Specific**: Tailored for 3DS authentication workflows
+- **Production-Ready**: Deployed and tested in reference Lambda implementation
 
 ---
 
@@ -64,17 +76,23 @@ This stateful session approach is the industry standard (see Technical Report) a
 
 ### 1.2 Package Information
 
-**Distribution:**
+**Local Package (NPM Workspace):**
+The authentication session service is implemented as a local package in this repository:
 ```bash
-# .npmrc configuration required
-@dw-digital-commerce:registry=https://npm.pkg.github.com/
-//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+# Location
+packages/checkout-3ds-session-service/library
 
-# Installation
-npm install @dw-digital-commerce/checkout-authentication-service
+# Usage in other workspace packages (e.g., lambda)
+import { SessionService } from '@dw-digital-commerce/checkout-3ds-session-service';
+import { DynamoDBSessionProvider } from '@dw-digital-commerce/checkout-3ds-session-service/dynamodb';
+import { MockSessionProvider } from '@dw-digital-commerce/checkout-3ds-session-service/mock';
 ```
 
-**GitHub Repository:** `dw-digital-commerce/checkout-authentication-service` (to be created)
+**For Direct Wines Implementation:**
+You can either:
+1. **Recommended**: Copy the entire `packages/checkout-3ds-session-service` directory to your project
+2. Publish this package to your internal npm registry if you prefer centralized distribution
+3. Use it as-is from this monorepo via npm workspaces
 
 **Versioning:** Semantic versioning (semver)
 - 1.x.x: Checkout API v0.5.0 compatibility
@@ -2067,35 +2085,68 @@ If issues arise in production:
 
 ### 12.3 References
 
-1. [TECHNICAL-REPORT-3DS-Stateful-vs-Stateless-Design.md](./TECHNICAL-REPORT-3DS-Stateful-vs-Stateless-Design.md)
-2. [AWS DynamoDB Time to Live (TTL) Documentation](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TTL.html)
-3. [AWS KMS Encryption Best Practices](https://docs.aws.amazon.com/kms/latest/developerguide/best-practices.html)
-4. [Stripe PaymentIntent API](https://docs.stripe.com/payments/paymentintents)
-5. [PayPal Orders API v2](https://developer.paypal.com/docs/api/orders/v2/)
+**Internal Documentation:**
+1. [ARCHITECTURE-3DS-Stateful-Design-Decision.md](./ARCHITECTURE-3DS-Stateful-Design-Decision.md) - Architectural rationale
+2. [INTEGRATION-Payments-SDK-Mapping.md](./INTEGRATION-Payments-SDK-Mapping.md) - Integration patterns
+
+**Reference Implementation:**
+3. [Core Interfaces](../../../packages/checkout-3ds-session-service/library/src/core/interfaces.ts)
+4. [DynamoDB Provider](../../../packages/checkout-3ds-session-service/library/src/providers/dynamodb/)
+5. [Mock Provider](../../../packages/checkout-3ds-session-service/library/src/providers/mock/)
+6. [CDK Infrastructure](../../../packages/checkout-3ds-session-service/infra/)
+
+**External Resources:**
+7. [AWS DynamoDB Time to Live (TTL) Documentation](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TTL.html)
+8. [Stripe PaymentIntent API](https://docs.stripe.com/payments/paymentintents) - Industry pattern reference
+9. [PayPal Orders API v2](https://developer.paypal.com/docs/api/orders/v2/) - Industry pattern reference
 
 ### 12.4 Version History
 
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0 | 2025-11-03 | [Author] | Initial specification |
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2025-11-03 | Initial specification |
+| 1.1 | 2025-11-07 | Updated with implementation status and code references |
 
-### 12.5 Future Enhancements
+### 12.5 Implementation Notes
 
-**Not in v1.0.0 scope:**
+**✅ Reference Implementation Complete**
 
-1. **Multi-Region Replication**: Global DynamoDB tables for multi-region deployments
-2. **Session Analytics**: Aggregate metrics on session success/failure rates
-3. **Advanced Monitoring**: Custom CloudWatch dashboards for session insights
-4. **Session Recovery**: Ability to extend session TTL if 3DS challenge takes >30 minutes
-5. **Alternative Providers**: Redis provider, S3 provider (for extreme cost optimization)
+The specification described in this document is fully implemented and available for use:
+- **Core abstractions**: [SessionService interface](../../../packages/checkout-3ds-session-service/library/src/core/interfaces.ts)
+- **DynamoDB provider**: [Production-ready implementation](../../../packages/checkout-3ds-session-service/library/src/providers/dynamodb/)
+- **Mock provider**: [Testing implementation](../../../packages/checkout-3ds-session-service/library/src/providers/mock/)
+- **CDK infrastructure**: [DynamoDB table stack](../../../packages/checkout-3ds-session-service/infra/)
+- **Unit tests**: [Vitest test suite](../../../packages/checkout-3ds-session-service/library/test/)
+- **Lambda integration**: [Demonstrated in handlers](../../../lambda/src/handlers/)
 
-### 12.6 Contact Information
+**For Direct Wines Implementation:**
+This package is production-ready and can be:
+1. Copied directly to your project's packages directory
+2. Used as-is via npm workspaces in a monorepo
+3. Published to your internal npm registry for centralized distribution
 
-For questions about this specification:
-- **Repository**: https://github.com/dw-digital-commerce/checkout-authentication-service (to be created)
-- **Issues**: https://github.com/dw-digital-commerce/checkout-authentication-service/issues
+The implementation is validated with the reference Lambda handlers and ready for commercetools integration.
+
+### 12.6 Future Enhancements
+
+**Potential v2.0 features (not currently scoped):**
+1. Multi-Region Replication: Global DynamoDB tables for multi-region deployments
+2. Session Analytics: Aggregate metrics on session success/failure rates
+3. Advanced Monitoring: Custom CloudWatch dashboards for session insights
+4. Session Recovery: Ability to extend session TTL if 3DS challenge takes >30 minutes
+5. Alternative Providers: Redis provider for high-throughput scenarios
+
+### 12.7 Contact Information
+
+For questions about this implementation:
+- **Repository**: [my-checkout-api](../../../)
+- **Implementation**: [packages/checkout-3ds-session-service](../../../packages/checkout-3ds-session-service)
+- **Documentation**: [docs/validate-capture](.)
 - **Team**: Checkout API Team
 
 ---
 
 **END OF SPECIFICATION**
+
+**Implementation Status:** ✅ v1.0.0 Complete (Checkout API v0.5.0)
+**Last Updated:** 2025-11-07
