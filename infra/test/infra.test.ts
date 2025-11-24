@@ -15,7 +15,8 @@ describe('LambdaStack', () => {
       serviceAccountId: '123456789012',
       functionNamePrefix: 'checkout',
       stageName: 'test',
-      brandKey: 'uklait'
+      brandKey: 'uklait',
+      useMock3dsSessionService: true
     };
 
     const stack = new LambdaStack(app, 'TestStack', { config });
@@ -43,7 +44,8 @@ describe('LambdaStack', () => {
       serviceAccountId: '210987654321',
       functionNamePrefix: 'checkout',
       stageName: 'test',
-      brandKey: 'uklait'
+      brandKey: 'uklait',
+      useMock3dsSessionService: true
     };
 
     const stack = new LambdaStack(app, 'TestStack', { config });
@@ -68,7 +70,8 @@ describe('ApiStack', () => {
       serviceAccountId: '123456789012',
       functionNamePrefix: 'checkout',
       stageName: 'test',
-      brandKey: 'uklait'
+      brandKey: 'uklait',
+      useMock3dsSessionService: true
     };
 
     const lambdaArn = 'arn:aws:lambda:eu-west-1:123456789012:function:dwaws-test-checkout-order-capture-lambda:live';

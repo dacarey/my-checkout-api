@@ -19,6 +19,13 @@ done
 echo "🗑️ Destroying infrastructure for environment: $ENVIRONMENT"
 
 ACCOUNT_ID=$(aws sts get-caller-identity --profile "$PROFILE" --query Account --output text)
+
+echo "🔧 Installing dependencies..."
+npm ci
+
+echo "🏗️ Building project..."
+npm run build
+
 cd infra
 
 # Destroy API stack first (depends on Lambda)

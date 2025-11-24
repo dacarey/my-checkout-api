@@ -48,8 +48,8 @@ export class LambdaStack extends Stack {
         DEFAULT_BRANDKEY: props.config.brandKey || 'uklait',
         NODE_ENV: props.config.environment,
         ENVIRONMENT: props.config.environment, // Required by checkout-3ds-session-service
-        AUTH_SESSION_TABLE_NAME: process.env.AUTH_SESSION_TABLE_NAME || `checkout-api-${props.config.environment}-3ds-sessions`,
-        USE_MOCK_AUTH: process.env.USE_MOCK_AUTH || 'true' // Use mock auth service for testing (checkout-3ds-session-service)
+        AUTH_SESSION_TABLE_NAME: `checkout-api-${props.config.environment}-3ds-sessions`,
+        USE_MOCK_AUTH: props.config.useMock3dsSessionService.toString() // Configured via CDK context (checkout-3ds-session-service)
       }
     });
 
@@ -71,7 +71,8 @@ export class LambdaStack extends Stack {
 
     // Add IAM permissions for DynamoDB access (3DS session storage)
     // This allows Lambda to read/write 3DS authentication sessions
-    const tableName = process.env.AUTH_SESSION_TABLE_NAME || `checkout-api-${props.config.environment}-3ds-sessions`;
+    // Note: Permissions are always added, but only used when useMock3dsSessionService=false
+    const tableName = `checkout-api-${props.config.environment}-3ds-sessions`;
     fn.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [

@@ -1,24 +1,73 @@
 #!/bin/bash
 set -e
 
-# Usage: ./deploy-single-account.sh [--profile PROFILE] [--environment ENV]
+# Usage: ./deploy-single-account.sh [OPTIONS]
+#
+# Options:
+#   --profile PROFILE                      AWS CLI profile (default: dw-sandbox)
+#   --environment ENV                      Deployment environment (default: dev)
+#   --use-mock-3ds-session-service <bool>  Use mock 3DS session service (true/false)
+#   --use-3ds-session-service <bool>       Use DynamoDB 3DS session service (true/false, inverted)
+#
 # Deploys both Lambda and API stacks to the same AWS account
-# Supports --profile for AWS profile and --environment for deployment environment
+# Supports choosing between mock (in-memory) and full (DynamoDB) 3DS session service
 
 PROFILE=${AWS_PROFILE:-"dw-sandbox"}
 ENVIRONMENT="dev"
+USE_MOCK_3DS=""  # Empty means auto-detect based on environment
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --profile) PROFILE="$2"; shift 2;;
-    --environment) ENVIRONMENT="$2"; shift 2;;
-    *) echo "Unknown option $1"; exit 1;;
+    --profile)
+      PROFILE="$2"
+      shift 2
+      ;;
+    --environment)
+      ENVIRONMENT="$2"
+      shift 2
+      ;;
+    --use-mock-3ds-session-service)
+      # Direct flag: true = mock, false = DynamoDB
+      USE_MOCK_3DS="$2"
+      shift 2
+      ;;
+    --use-3ds-session-service)
+      # Inverted flag: true = DynamoDB, false = mock
+      if [ "$2" = "true" ]; then
+        USE_MOCK_3DS="false"
+      else
+        USE_MOCK_3DS="true"
+      fi
+      shift 2
+      ;;
+    # Legacy support
+    --use-mock-auth)
+      echo "⚠️  Warning: --use-mock-auth is deprecated, use --use-mock-3ds-session-service instead"
+      USE_MOCK_3DS="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: $0 [--profile PROFILE] [--environment ENV] [--use-mock-3ds-session-service true|false] [--use-3ds-session-service true|false]"
+      exit 1
+      ;;
   esac
 done
 
+# Auto-detect USE_MOCK_3DS if not explicitly set
+# Default to true for dev/sit, false for uat/prod
+if [ -z "$USE_MOCK_3DS" ]; then
+  if [[ "$ENVIRONMENT" == "dev" || "$ENVIRONMENT" == "sit" ]]; then
+    USE_MOCK_3DS="true"
+  else
+    USE_MOCK_3DS="false"
+  fi
+fi
+
 echo "🚀 Deploying to single account using profile: $PROFILE"
 echo "📦 Environment: $ENVIRONMENT"
+echo "🔐 3DS Session Service: $([ "$USE_MOCK_3DS" = "true" ] && echo "Mock (in-memory)" || echo "DynamoDB (persistent)")"
 
 # Get account ID
 ACCOUNT_ID=$(aws sts get-caller-identity --profile "$PROFILE" --query Account --output text)
@@ -29,13 +78,36 @@ npm ci
 echo "🏗️ Building project..."
 npm run build
 
+# Conditionally deploy 3DS Session Service Infrastructure (DynamoDB)
+if [ "$USE_MOCK_3DS" = "false" ]; then
+  echo ""
+  echo "📊 Deploying 3DS Session Service Infrastructure (DynamoDB)..."
+  echo "   Table: checkout-api-${ENVIRONMENT}-3ds-sessions"
+
+  if [ -f "packages/checkout-3ds-session-service/scripts/deploy.sh" ]; then
+    bash packages/checkout-3ds-session-service/scripts/deploy.sh \
+      --profile "$PROFILE" \
+      --environment "$ENVIRONMENT" \
+      --account-id "$ACCOUNT_ID"
+  else
+    echo "⚠️  Warning: 3DS session service deployment script not found"
+    echo "   Skipping DynamoDB table deployment"
+  fi
+  echo ""
+else
+  echo ""
+  echo "⏭️  Skipping 3DS Session Service deployment (using mock 3DS session service)"
+  echo ""
+fi
+
 cd infra
 
 echo "🚀 Deploying Lambda Stack..."
 npx cdk deploy LambdaStack --profile "$PROFILE" --require-approval never \
   -c environment="$ENVIRONMENT" \
   -c apiAccountId="$ACCOUNT_ID" \
-  -c serviceAccountId="$ACCOUNT_ID"
+  -c serviceAccountId="$ACCOUNT_ID" \
+  -c useMock3ds="$USE_MOCK_3DS"
 
 echo "📡 Getting Lambda alias ARN..."
 FUNCTION_NAME="dwaws-${ENVIRONMENT}-checkout-order-capture-lambda"
@@ -68,6 +140,7 @@ API_STACK_OUTPUT=$(npx cdk deploy ApiStack --profile "$PROFILE" --require-approv
   -c environment="$ENVIRONMENT" \
   -c apiAccountId="$ACCOUNT_ID" \
   -c serviceAccountId="$ACCOUNT_ID" \
+  -c useMock3ds="$USE_MOCK_3DS" \
   --outputs-file cdk-outputs.json)
 
 # Extract API Gateway ID from CDK outputs

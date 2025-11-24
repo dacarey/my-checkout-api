@@ -90,18 +90,27 @@ npm run examples:build             # Build examples
 npm run diff:single                # Diff with bypass authorizer (dev testing)
 npm run diff:single:auth           # Diff with authentication enabled
 
-# Deploy to single AWS account
-npm run deploy:single              # Deploy with BYPASS_AUTHORIZER=true (dev only)
-npm run deploy:single:auth         # Deploy with full authentication
+# Deploy to single AWS account (Mock 3DS mode - default for dev)
+npm run deploy:single              # Mock 3DS + bypass authorizer (fast dev)
+npm run deploy:single:auth         # Mock 3DS + authentication enabled
+
+# Deploy with Full 3DS (DynamoDB-backed sessions)
+npm run deploy:single:full-3ds         # Full 3DS + bypass authorizer
+npm run deploy:single:full-3ds:auth    # Full 3DS + authentication enabled
 
 # Clean up resources
 npm run destroy:single             # Destroy both API and Lambda stacks
 ```
 
+**3DS Authentication Modes:**
+- **Mock Mode** (default for dev/sit): Uses in-memory sessions, no DynamoDB required
+- **Full Mode** (default for uat/prod): Uses DynamoDB for persistent sessions, auto-deploys table
+- See [3DS Deployment Modes Guide](docs/howto/3ds-deployment-modes.md) for details
+
 ### Manual Deployment Scripts
 ```bash
-./deploy-single-account.sh --profile PROFILE --environment ENV
-./diff-single-account.sh --profile PROFILE --environment ENV
+./deploy-single-account.sh --profile PROFILE --environment ENV [--use-mock-auth true|false]
+./diff-single-account.sh --profile PROFILE --environment ENV [--use-mock-auth true|false]
 ./destroy-single-account.sh --profile PROFILE --environment ENV
 ./verify-deployment.sh --profile PROFILE --environment ENV
 ```
@@ -383,6 +392,7 @@ npm run version:all patch|minor|major
 ### Developer Guides (Start Here)
 - **[Getting Started with Payments](docs/howto/getting-started-payments.md)** - Comprehensive guide with security best practices, complete Lambda implementation, CDK stack setup, and testing
 - **[Advanced 3DS Integration](docs/howto/advanced-3ds-integration.md)** - Implementing 3D Secure authentication with stateful sessions
+- **[3DS Deployment Modes](docs/howto/3ds-deployment-modes.md)** - Choosing between Mock and Full 3DS authentication modes for different environments
 - **[Multi-Account Deployment](docs/howto/multi-account-deployment.md)** - AWS multi-account setup and deployment strategies
 - **[Developer Guides Hub](docs/howto/README.md)** - Navigation hub for all practical guides
 
