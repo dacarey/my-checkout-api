@@ -25,6 +25,8 @@
     "test:3ds-infra:run": "npm run test:run --workspace=packages/checkout-3ds-session-service/infra",
     "deploy:single": "BYPASS_AUTHORIZER=true ./deploy-single-account.sh",
     "deploy:single:auth": "./deploy-single-account.sh",
+    "deploy:single:full-3ds": "BYPASS_AUTHORIZER=true ./deploy-single-account.sh --use-3ds-session-service true",
+    "deploy:single:full-3ds:auth": "./deploy-single-account.sh --use-3ds-session-service true",
     "diff:single": "BYPASS_AUTHORIZER=true ./diff-single-account.sh",
     "diff:single:auth": "./diff-single-account.sh",
     "destroy:single": "./destroy-single-account.sh",

@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@dw-digital-commerce/payments-sdk": "^5.0.0",
-    "@dw-digital-commerce/checkout-3ds-session-service": "workspace:*",
+    "@dw-digital-commerce/checkout-3ds-session-service": "*",
     "@aws-sdk/client-secrets-manager": "^3.0.0"
   },
   "devDependencies": {

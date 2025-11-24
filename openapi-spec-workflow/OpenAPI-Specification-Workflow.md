@@ -1,6 +1,6 @@
-# Cart API OpenAPI Specification Workflow
+# Checkout API OpenAPI Specification Workflow
 
-This document outlines the workflow for managing the Cart API OpenAPI specification, separate from general Cart API development. It covers validation, versioning, and publishing of the OpenAPI schema to SwaggerHub.
+This document outlines the workflow for managing the Checkout API OpenAPI specification, separate from general Checkout API development. It covers validation, versioning, and publishing of the OpenAPI schema to SwaggerHub.
 
 ## 📋 Table of Contents
 
@@ -15,7 +15,7 @@ This document outlines the workflow for managing the Cart API OpenAPI specificat
 
 ## 🌟 Overview
 
-The Cart API OpenAPI specification is managed independently from the Cart API codebase. This workflow allows you to:
+The Checkout API OpenAPI specification is managed independently from the Checkout API codebase. This workflow allows you to:
 
 - **Validate** OpenAPI specifications against standards
 - **Version** the API specification independently
@@ -24,8 +24,8 @@ The Cart API OpenAPI specification is managed independently from the Cart API co
 
 **Target Files**:
 
-- **Master Source**: `cdk/lib/apigateway/openapi-spec/carts-openapi-unresolved.yaml`
-- **Generated Output**: `cdk/lib/apigateway/openapi-spec/carts-openapi.yaml`
+- **Master Source**: `../openapi/checkout-openapi-unresolved.yaml`
+- **Generated Output**: `../openapi/checkout-openapi.yaml`
 
 ## 📋 File Structure
 
@@ -33,14 +33,14 @@ The Cart API OpenAPI specification is managed independently from the Cart API co
 
 This workflow manages two versions of the OpenAPI specification:
 
-**🔧 Unresolved Specification** (`carts-openapi-unresolved.yaml`)
+**🔧 Unresolved Specification** (`checkout-openapi-unresolved.yaml`)
 
 - **Purpose**: Master source for development and editing
 - **Content**: Contains `$ref` references to shared components and schemas
 - **Maintainability**: Easier to maintain, no duplication, modular structure
 - **Usage**: Edit this file directly, sync to SwaggerHub for collaboration
 
-**📦 Resolved Specification** (`carts-openapi.yaml`)
+**📦 Resolved Specification** (`checkout-openapi.yaml`)
 
 - **Purpose**: Deployment-ready version for AWS API Gateway
 - **Content**: All `$ref` references expanded inline (resolved)
@@ -53,8 +53,8 @@ This workflow manages two versions of the OpenAPI specification:
 graph LR
     A[Edit Unresolved] --> B[Sync to SwaggerHub]
     B --> C{Download Type}
-    C -->|Current Version| D[carts-openapi.yaml]
-    C -->|Historical Version| E[carts-openapi-X.Y.Z.yaml]
+    C -->|Current Version| D[checkout-openapi.yaml]
+    C -->|Historical Version| E[checkout-openapi-X.Y.Z.yaml]
     D --> F[Deploy to AWS]
     E --> G[Compare/Reference]
 
@@ -88,7 +88,7 @@ graph LR
 1. **Install dependencies**
 
    ```bash
-   cd apis/carts
+   cd openapi-spec-workflow
    npm install
    ```
 
@@ -115,8 +115,8 @@ graph LR
 | `npm run sync:dev`                           | Sync unpublished (editable) version to SwaggerHub                 |
 | `npm run download:resolved`                  | Download resolved specification from SwaggerHub (current version) |
 | `npm run download:resolved:force`            | Force download, overwrite existing file                           |
-| `npm run download:resolved:1.4.2`            | Download specific version 1.4.2 as versioned file                 |
-| `npm run download:resolved:1.4.2:force`      | Download version 1.4.2 with force overwrite                       |
+| `npm run download:resolved:0.5.0`            | Download specific version 0.5.0 as versioned file                 |
+| `npm run download:resolved:0.5.0:force`      | Download version 0.5.0 with force overwrite                       |
 | `npm run download:resolved:crlf`             | Download with Windows line endings (CRLF)                         |
 | `npm run download:resolved:auto`             | Download with platform default line endings                       |
 | `npm run publish:dev`                        | Alias for sync:dev                                                |
@@ -141,7 +141,7 @@ This workflow is designed for OpenAPI specification changes and follows branch p
    npm run version:bump minor  # or major/patch
    ```
 
-3. **Make OpenAPI specification changes** in `cdk/lib/apigateway/openapi-spec/carts-openapi-unresolved.yaml`
+3. **Make OpenAPI specification changes** in `../openapi/checkout-openapi-unresolved.yaml`
 
 4. **Validate changes**
 
@@ -159,11 +159,11 @@ This workflow is designed for OpenAPI specification changes and follows branch p
 6. **Optional: Download resolved specification** (get version with expanded $ref for local deployment)
 
    ```bash
-   # Download current version (saves as carts-openapi.yaml)
+   # Download current version (saves as checkout-openapi.yaml)
    npm run download:resolved
 
-   # Download specific version (saves as carts-openapi-1.4.2.yaml)
-   npm run download:resolved -- --version 1.4.2
+   # Download specific version (saves as checkout-openapi-0.5.0.yaml)
+   npm run download:resolved -- --version 0.5.0
 
    # Download with Windows line endings
    npm run download:resolved -- --line-endings crlf
@@ -172,16 +172,16 @@ This workflow is designed for OpenAPI specification changes and follows branch p
 7. **Commit and push branch**
 
    ```bash
-   git add package.json package-lock.json cdk/lib/apigateway/openapi-spec/carts-openapi-unresolved.yaml
+   git add package.json package-lock.json ../openapi/checkout-openapi-unresolved.yaml
    # Optional: Also add resolved spec if downloaded
-   # git add cdk/lib/apigateway/openapi-spec/carts-openapi.yaml
-   git commit -m "feat(openapi): update Cart API specification to v1.5.0"
+   # git add ../openapi/checkout-openapi.yaml
+   git commit -m "feat(openapi): update Checkout API specification to v0.6.0"
    git push -u origin feature/CHECK-108-update-openapi-spec
    ```
 
 8. **Create PR**
    ```bash
-   gh pr create --title "feat(openapi): update Cart API specification to v1.5.0" --body "Updates OpenAPI specification with new endpoints and schema improvements"
+   gh pr create --title "feat(openapi): update Checkout API specification to v0.6.0" --body "Updates OpenAPI specification with new endpoints and schema improvements"
    ```
 
 ### Phase 2: Release (after PR merged)
@@ -189,7 +189,7 @@ This workflow is designed for OpenAPI specification changes and follows branch p
 9. **Create release tag** (triggers automated publishing to SwaggerHub via GitHub Actions)
    ```bash
    git checkout main && git pull
-   git tag v1.5.0 && git push --tags
+   git tag v0.6.0 && git push --tags
    ```
 
 ### Branch Naming Requirements
@@ -244,8 +244,8 @@ For stable releases:
 
 ```bash
 # Option 1: Automatic (recommended)
-git tag v1.5.0
-git push origin v1.5.0
+git tag v0.6.0
+git push origin v0.6.0
 
 # Option 2: Manual
 npm run publish:prod
@@ -258,28 +258,28 @@ This creates a **published, read-only** version that becomes the stable release.
 | Stage       | Command            | SwaggerHub Status      | Use Case                    |
 | ----------- | ------------------ | ---------------------- | --------------------------- |
 | Development | `npm run sync:dev` | Unpublished (editable) | Active development, testing |
-| Production  | `git tag v1.5.0`   | Published (read-only)  | Stable releases             |
+| Production  | `git tag v0.6.0`   | Published (read-only)  | Stable releases             |
 
 ### SwaggerHub Links
 
-- **API**: https://app.swaggerhub.com/apis/Direct_Wines/cart-api
-- **Current Version**: https://app.swaggerhub.com/apis/Direct_Wines/cart-api/1.4.2
+- **API**: https://app.swaggerhub.com/apis/Direct_Wines/checkout-api
+- **Current Version**: https://app.swaggerhub.com/apis/Direct_Wines/checkout-api/0.5.0
 
 ## 🎯 Version Management
 
 ### Semantic Versioning
 
-The OpenAPI specification follows semantic versioning independently from the Cart API application:
+The OpenAPI specification follows semantic versioning independently from the Checkout API application:
 
-- **Major** (1.0.0 → 2.0.0): Breaking changes to API structure
-- **Minor** (1.0.0 → 1.1.0): New endpoints, non-breaking changes
-- **Patch** (1.0.0 → 1.0.1): Documentation updates, bug fixes
+- **Major** (0.5.0 → 1.0.0): Breaking changes to API structure
+- **Minor** (0.5.0 → 0.6.0): New endpoints, non-breaking changes
+- **Patch** (0.5.0 → 0.5.1): Documentation updates, bug fixes
 
 ### Version Bump Process
 
 ```bash
 # Update both package.json and OpenAPI schema versions
-npm run version:bump minor  # Bumps 1.4.2 → 1.5.0
+npm run version:bump minor  # Bumps 0.5.0 → 0.6.0
 ```
 
 ### Historical Version Access
@@ -288,25 +288,25 @@ Download any previous version for comparison or rollback:
 
 ```bash
 # Download specific version as versioned file
-npm run download:resolved -- --version 1.4.2  # → carts-openapi-1.4.2.yaml
-npm run download:resolved -- --version 1.3.0  # → carts-openapi-1.3.0.yaml
+npm run download:resolved -- --version 0.5.0  # → checkout-openapi-0.5.0.yaml
+npm run download:resolved -- --version 0.4.0  # → checkout-openapi-0.4.0.yaml
 
 # Or use convenience scripts
-npm run download:resolved:1.4.2
+npm run download:resolved:0.5.0
 ```
 
 ### File Naming Convention
 
-| Download Type        | Filename                       | Use Case                         |
-| -------------------- | ------------------------------ | -------------------------------- |
-| **Current Version**  | `carts-openapi.yaml`           | AWS API Gateway deployment       |
-| **Specific Version** | `carts-openapi-{version}.yaml` | Historical reference, comparison |
+| Download Type        | Filename                          | Use Case                         |
+| -------------------- | --------------------------------- | -------------------------------- |
+| **Current Version**  | `checkout-openapi.yaml`           | AWS API Gateway deployment       |
+| **Specific Version** | `checkout-openapi-{version}.yaml` | Historical reference, comparison |
 
 **Examples:**
 
-- `npm run download:resolved` → `carts-openapi.yaml` (current: 1.4.3)
-- `npm run download:resolved -- --version 1.4.2` → `carts-openapi-1.4.2.yaml`
-- `npm run download:resolved -- --version 1.3.0` → `carts-openapi-1.3.0.yaml`
+- `npm run download:resolved` → `checkout-openapi.yaml` (current: 0.5.0)
+- `npm run download:resolved -- --version 0.5.0` → `checkout-openapi-0.5.0.yaml`
+- `npm run download:resolved -- --version 0.4.0` → `checkout-openapi-0.4.0.yaml`
 
 ### Version Consistency
 
@@ -336,7 +336,7 @@ npm run download:resolved -- --line-endings lf       # Unix format (default)
 npm run download:resolved -- --line-endings auto     # Platform default
 
 # Combine with version selection
-npm run download:resolved -- --version 1.4.2 --line-endings crlf
+npm run download:resolved -- --version 0.5.0 --line-endings crlf
 
 # Convenience scripts
 npm run download:resolved:crlf  # Windows line endings
@@ -393,18 +393,18 @@ npm run sync:dev
 npm run download:resolved -- --force
 
 # Download specific version (creates versioned file)
-npm run download:resolved -- --version 1.4.2
+npm run download:resolved -- --version 0.5.0
 
 # Check if version exists on SwaggerHub
-# Visit: https://app.swaggerhub.com/apis/Direct_Wines/cart-api/[version]
+# Visit: https://app.swaggerhub.com/apis/Direct_Wines/checkout-api/[version]
 
 # Verify API key has proper permissions for the organization
 export SWAGGERHUB_API_KEY="your-api-key"
-npx swaggerhub api:get Direct_Wines/cart-api --json
+npx swaggerhub api:get Direct_Wines/checkout-api --json
 
 # Test version format validation
 npm run download:resolved -- --version invalid.format  # Shows error
-npm run download:resolved -- --version 1.4.2          # Valid format
+npm run download:resolved -- --version 0.5.0          # Valid format
 
 # Test line ending options
 npm run download:resolved -- --line-endings invalid    # Shows error
@@ -425,8 +425,8 @@ npm run download:resolved -- --line-endings crlf       # Valid option
 
 ### File Locations
 
-- **Unresolved OpenAPI Spec** (Master): `cdk/lib/apigateway/openapi-spec/carts-openapi-unresolved.yaml`
-- **Resolved OpenAPI Spec** (Generated): `cdk/lib/apigateway/openapi-spec/carts-openapi.yaml`
+- **Unresolved OpenAPI Spec** (Master): `../openapi/checkout-openapi-unresolved.yaml`
+- **Resolved OpenAPI Spec** (Generated): `../openapi/checkout-openapi.yaml`
 - **Validation Config**: `.spectral.yaml`
 - **Scripts**: `scripts/` directory
 - **Dependencies**: `package.json`
@@ -434,5 +434,5 @@ npm run download:resolved -- --line-endings crlf       # Valid option
 ---
 
 **Maintained by**: DW Digital Commerce Team
-**Related APIs**: [Cart API Repository](https://github.com/dw-digital-commerce/cart-api)
-**Last Updated**: September 2025
+**Related APIs**: [Checkout API Repository](https://github.com/dw-digital-commerce/my-checkout-api)
+**Last Updated**: November 2025

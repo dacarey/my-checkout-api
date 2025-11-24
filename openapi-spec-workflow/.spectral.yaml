@@ -57,6 +57,6 @@ rules:
 
 overrides:
   - files:
-      - "cdk/lib/apigateway/openapi-spec/carts-openapi-unresolved.yaml#/components/schemas/*"
+      - "../openapi/checkout-openapi-unresolved.yaml#/components/schemas/*"
     rules:
       oas3-unused-component: "off"

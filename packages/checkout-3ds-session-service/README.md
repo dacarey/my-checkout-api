@@ -175,6 +175,3 @@ This mono-repo structure makes it easy to extract into a standalone repository:
 3. Set up GitHub Actions for CI/CD
 4. Publish library to GitHub Packages or private npm registry
 
-## License
-
-UNLICENSED - Internal use only

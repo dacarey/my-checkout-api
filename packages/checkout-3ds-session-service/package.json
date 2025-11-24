@@ -34,7 +34,6 @@
     "aws-cdk"
   ],
   "author": "Direct Wines Digital Commerce Team",
-  "license": "UNLICENSED",
   "engines": {
     "node": ">=22.0.0"
   }
