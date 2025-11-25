@@ -1,3 +1,5 @@
+> ⚠️ **ARCHIVED:** This repository has been moved to [Dave-Carey_DWINES/my-checkout-api](https://github.com/Dave-Carey_DWINES/my-checkout-api). Please use the work repository for all future development.
+
 # Checkout API
 
 Serverless checkout API with multi-account AWS deployment support using Lambda, API Gateway, and CDK.
