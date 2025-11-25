@@ -77,6 +77,9 @@ jspm_packages/
 *.swo
 *~
 
+# Local AI configuration
+CLAUDE.local.md
+
 # OS generated files
 .DS_Store
 .DS_Store?
